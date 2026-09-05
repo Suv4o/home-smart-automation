@@ -1,0 +1,32 @@
+node_modules/
+dist/
+.DS_Store
+
+# --- Secrets: never commit ---
+# .env holds the TP-Link account password and your Tesla VIN
+.env
+.secrets
+.vars
+# Solarman access / refresh tokens
+*.token.json
+# A Tesla private key IS a working car key - anyone with it can unlock and drive
+*.pem
+keys/
+# Tesla BLE session cache
+.tesla-cache.json
+# Captured browser requests may contain live tokens
+docs/captured-requests.md
+
+# --- Blog drafts: kept locally, not published with the code ---
+blogs/
+
+# --- Privacy ---
+# Logs hold a time-series of household consumption, which reveals occupancy
+# patterns (when you're home, asleep, away). Tesla output can contain GPS.
+*.log
+out/
+
+# --- Python ---
+__pycache__/
+*.pyc
+.venv/

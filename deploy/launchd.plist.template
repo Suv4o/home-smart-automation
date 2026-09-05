@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>__LABEL__</string>
+
+  <!-- Long-lived daemon; it schedules its own ticks with node-cron (SCHEDULE_CRON). -->
+  <key>ProgramArguments</key>
+  <array>
+    <string>__REPO__/deploy/run-daemon.sh</string>
+  </array>
+
+  <!-- Start at login/boot and keep it running; relaunch on crash. -->
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <!-- If it crashes on startup, wait before relaunching (avoids a tight loop). -->
+  <key>ThrottleInterval</key>
+  <integer>30</integer>
+
+  <key>StandardOutPath</key>
+  <string>__LOG__</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG__</string>
+</dict>
+</plist>
