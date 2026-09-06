@@ -5,15 +5,20 @@ import { DryRunCharger } from "./charger/dry-run.ts";
 import { TapoCliCharger } from "./charger/tapo-cli.ts";
 import type { ChargerController } from "./charger/types.ts";
 import { loadConfig } from "./config.ts";
+import { loadOverride } from "./engine/override.ts";
 import { applyCarSocGate, type CarSoc, decide } from "./engine/policy.ts";
 import { logger } from "./logger.ts";
 import { seedRefreshToken, SolarmanWebProvider, tokenCachePath } from "./providers/solarman-web.ts";
+import { startDemo } from "./server/demo.ts";
+import { startServer } from "./server/index.ts";
+import { StateStore } from "./server/state.ts";
+import { World } from "./server/world.ts";
 import { melbourneClock } from "./time.ts";
 
 const USAGE = `
 home-smart-automation
 
-  watch [--dry-run]              Long-running daemon: run a tick at :00 and :30 forever
+  watch [--dry-run] [--demo]     Long-running daemon; --demo cycles scripted display states
   run [--dry-run]                One tick: read stats, decide, switch the plug
   seed <refresh-token>           Seed Solarman auth from a browser session's refresh token
   snapshot [--json] [--raw]      Print one reading of the system
@@ -38,6 +43,7 @@ async function main(): Promise<number> {
 			json: { type: "boolean", default: false },
 			raw: { type: "boolean", default: false },
 			"dry-run": { type: "boolean", default: false },
+			demo: { type: "boolean", default: false },
 			help: { type: "boolean", short: "h", default: false },
 		},
 	});
@@ -55,7 +61,7 @@ async function main(): Promise<number> {
 			return runOnce(config, values["dry-run"]);
 
 		case "watch":
-			return watch(config, values["dry-run"]);
+			return watch(config, values["dry-run"], values.demo);
 
 		case "seed": {
 			const token = positionals[1];
@@ -139,7 +145,14 @@ async function runOnce(config: ReturnType<typeof loadConfig>, dryRun: boolean): 
 	const clock = melbourneClock();
 	const [snapshot, chargerState] = await Promise.all([provider.snapshot(), charger.state()]);
 
-	const base = decide({ minutesOfDay: clock.minutesOfDay, snapshot, charger: chargerState, config: config.policy });
+	const override = await loadOverride();
+	const base = decide({
+		minutesOfDay: clock.minutesOfDay,
+		snapshot,
+		charger: chargerState,
+		config: config.policy,
+		override,
+	});
 
 	// Only wake the car once everything else already says "charge" - reading the
 	// car's battery wakes it, and it's cached (TTL) so consecutive ticks don't.
@@ -163,6 +176,7 @@ async function runOnce(config: ReturnType<typeof loadConfig>, dryRun: boolean): 
 			plugOn: chargerState.on,
 			plugW: Math.round(chargerState.powerW),
 			carSoc: carSoc ? carSoc.soc : undefined,
+			override: override ? override.mode : undefined,
 			decision: decision.action,
 		},
 		decision.reason,
@@ -186,7 +200,7 @@ async function runOnce(config: ReturnType<typeof loadConfig>, dryRun: boolean): 
  * running - the next tick re-reads the world from scratch. Kept alive across
  * reboots/crashes by the launchd job in deploy/ (KeepAlive).
  */
-async function watch(config: ReturnType<typeof loadConfig>, dryRun: boolean): Promise<number> {
+async function watch(config: ReturnType<typeof loadConfig>, dryRun: boolean, demo = false): Promise<number> {
 	const expression = config.scheduleCron;
 	if (!validate(expression)) {
 		throw new Error(`SCHEDULE_CRON is not a valid cron expression: ${JSON.stringify(expression)}`);
@@ -201,14 +215,39 @@ async function watch(config: ReturnType<typeof loadConfig>, dryRun: boolean): Pr
 		}
 	};
 
-	await tick(); // run immediately so startup is observable
+	// The dashboard shares one World with the scheduler, so the screen and the
+	// decisions always agree. The display loop refreshes far more often than the
+	// decision tick, but only ever reads - it never wakes the car or switches.
+	const controller = new AbortController();
+	const store = new StateStore();
+	const car = new TeslaCar(config.car.controlCmd, config.car.socTtlMs);
+	const world = new World(
+		makeProvider(config),
+		new TapoCliCharger(config.tapo.cliCmd),
+		car,
+		config,
+		store,
+	);
+	startServer({ config, store, world, car, runTick: demo ? async () => undefined : tick }, controller.signal);
+	if (demo) {
+		logger.warn("demo mode — cycling scripted states; nothing is read or switched");
+		startDemo(config, store, controller.signal);
+	} else {
+		world.start(controller.signal);
+	}
+
+	if (!demo) await tick(); // run immediately so startup is observable
 
 	// noOverlap guards against a slow tick still running when the next fires.
-	const task = schedule(expression, tick, { name: "home-automation-tick", noOverlap: true });
+	const task = schedule(expression, demo ? async () => undefined : tick, {
+		name: "home-automation-tick",
+		noOverlap: true,
+	});
 
 	await new Promise<void>((resolve) => {
 		const stop = (signal: string): void => {
 			logger.info({ signal }, "stopping scheduler");
+			controller.abort();
 			void task.stop();
 			resolve();
 		};

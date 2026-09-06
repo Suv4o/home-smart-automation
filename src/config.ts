@@ -58,6 +58,19 @@ const Schema = z
 			.default("false")
 			.transform((v) => /^(true|1|yes)$/i.test(v.trim())),
 
+		// --- Dashboard server ---
+		UI_PORT: z.coerce.number().int().positive().default(8080),
+		UI_HOST: z.string().default("0.0.0.0"),
+		// How often the display refreshes (never wakes the car).
+		UI_REFRESH_S: z.coerce.number().positive().default(15),
+		// Don't re-poll Solarman more often than this; upstream lags ~5 min anyway.
+		SOLARMAN_MIN_INTERVAL_S: z.coerce.number().positive().default(60),
+		// Required for write endpoints (overrides, car refresh). Blank disables them.
+		DASHBOARD_TOKEN: z.string().optional(),
+		// Home coordinates, for sunrise/sunset only. Defaults to Melbourne CBD.
+		LATITUDE: z.coerce.number().min(-90).max(90).default(-37.81),
+		LONGITUDE: z.coerce.number().min(-180).max(180).default(144.96),
+
 		// --- Scheduling (the `watch` daemon) ---
 		// Cron expression for how often to tick. Default: :00 and :30 each hour.
 		SCHEDULE_CRON: z.string().min(1).default("0,30 * * * *"),
@@ -96,6 +109,16 @@ export interface AppConfig {
 	/** Tesla car reader (tesla-control CLI + SOC cache TTL). */
 	readonly car: { controlCmd: string; socTtlMs: number };
 	readonly policy: PolicyConfig;
+	/** Dashboard HTTP server + display polling. */
+	readonly ui: {
+		port: number;
+		host: string;
+		refreshMs: number;
+		solarmanMinIntervalMs: number;
+		token: string | undefined;
+	};
+	/** Home coordinates, used only for sun/moon position. */
+	readonly location: { latitude: number; longitude: number };
 	/** Cron expression for the `watch` daemon's tick. */
 	readonly scheduleCron: string;
 }
@@ -133,6 +156,14 @@ export function loadConfig(): AppConfig {
 			carMaxSoc: e.CAR_MAX_SOC,
 			chargeIfCarUnknown: e.CHARGE_IF_CAR_UNKNOWN,
 		},
+		ui: {
+			port: e.UI_PORT,
+			host: e.UI_HOST,
+			refreshMs: e.UI_REFRESH_S * 1000,
+			solarmanMinIntervalMs: e.SOLARMAN_MIN_INTERVAL_S * 1000,
+			token: e.DASHBOARD_TOKEN,
+		},
+		location: { latitude: e.LATITUDE, longitude: e.LONGITUDE },
 		scheduleCron: e.SCHEDULE_CRON,
 	};
 }

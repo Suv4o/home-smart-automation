@@ -1,0 +1,10 @@
+{
+  "name": "Home Energy",
+  "short_name": "Energy",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#0d0d0d",
+  "theme_color": "#0d0d0d",
+  "icons": []
+}

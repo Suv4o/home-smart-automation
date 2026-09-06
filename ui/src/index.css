@@ -1,0 +1,105 @@
+@import "@fontsource/ubuntu/400.css";
+@import "@fontsource/ubuntu/500.css";
+@import "@fontsource/ubuntu/700.css";
+@import "tailwindcss";
+
+/*
+ * The whole page follows the sky, not just the illustration: a cream daytime
+ * scene inside dark chrome would look pasted on. `data-phase` on <html> swaps
+ * the tokens; the scene interpolates its own colours for a smooth dusk.
+ *
+ * Both palettes are hand-picked for their own surface rather than one being an
+ * automatic inversion of the other.
+ */
+@theme {
+  --font-sans: "Ubuntu", ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --color-page: #f2ede3;
+  --color-surface: #e8e1d5;
+  --color-ink: #1b2430;
+  --color-ink-dim: #4a5563;
+  --color-muted: #7c8794;
+  --color-hairline: #d8cfc0;
+
+  /* Stepped for the cream surface: each clears 3:1 on it. The night block
+     re-steps them rather than reusing these, which are far too dark there. */
+  --color-good: #0a7d28;
+  --color-warning: #a05c06;
+  --color-serious: #a8481f;
+  --color-critical: #b02d2c;
+  --color-battery: #2364b0;
+}
+
+:root[data-phase="night"] {
+  --color-page: #0b1420;
+  --color-surface: #16212f;
+  --color-ink: #f2f4f7;
+  --color-ink-dim: #c2cad5;
+  --color-muted: #8a93a0;
+  --color-hairline: #232e3d;
+
+  --color-good: #17994a;
+  --color-warning: #c07c10;
+  --color-serious: #bd5a34;
+  --color-critical: #ce4a46;
+  --color-battery: #4285d6;
+}
+
+/* Dusk and dawn sit between the two; the chrome takes the nearer end while the
+   illustration itself interpolates properly. */
+:root[data-phase="dusk"],
+:root[data-phase="dawn"] {
+  --color-page: #2b2440;
+  --color-surface: #362d4e;
+  --color-ink: #f5f0ea;
+  --color-ink-dim: #d2cadd;
+  --color-muted: #9c93ae;
+  --color-hairline: #473c5e;
+
+  --color-good: #17994a;
+  --color-warning: #c07c10;
+  --color-serious: #bd5a34;
+  --color-critical: #ce4a46;
+  --color-battery: #4285d6;
+}
+
+html, body, #root { height: 100%; }
+
+body {
+  margin: 0;
+  background: var(--color-page);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  overscroll-behavior: none;
+  /*
+   * Deliberately not transitioned. The tokens are already recomputed from the
+   * sun's real position on every update, so they move gradually on their own; a
+   * CSS transition on top only added a second, slower animation that the SVG
+   * could not follow. Easing cream to navy also runs the page through grey, so a
+   * phase change washed the whole screen out mid-transition while the
+   * illustration had already snapped.
+   */
+}
+
+/* Ubuntu ships proportional figures, which makes live values jump about as they
+   change width. Force tabular figures everywhere a number is shown. */
+.tabular-nums, text, .value {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+/* Dots riding an energy wire (see FlowTrace). offset-path is composited, so this
+   stays smooth on a slow tablet where a blur filter would not. */
+@keyframes trace-run {
+  from { offset-distance: 0%; }
+  to   { offset-distance: 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

@@ -4,7 +4,20 @@ import { logger } from "../logger.ts";
 import type { ChargerController, ChargerState } from "./types.ts";
 
 const run = promisify(execFile);
-const TIMEOUT_MS = 60_000; // cloud round-trips can be slow
+const TIMEOUT_MS = 60_000;
+
+/**
+ * The plug allows only one KLAP session at a time - two overlapping handshakes
+ * get a `400 to handshake2`. The decision tick and the display poller can fire
+ * together (both run at daemon startup), so every plug call in this process
+ * queues behind the last one.
+ */
+let chain: Promise<unknown> = Promise.resolve();
+function serialise<T>(fn: () => Promise<T>): Promise<T> {
+	const next = chain.then(fn, fn);
+	chain = next.catch(() => undefined);
+	return next;
+}
 
 export class PlugCliError extends Error {}
 
@@ -29,6 +42,10 @@ export class TapoCliCharger implements ChargerController {
 	}
 
 	async #invoke(sub: "state" | "on" | "off"): Promise<string> {
+		return serialise(() => this.#invokeNow(sub));
+	}
+
+	async #invokeNow(sub: "state" | "on" | "off"): Promise<string> {
 		try {
 			const { stdout, stderr } = await run(this.#cmd, [...this.#args, sub], { timeout: TIMEOUT_MS });
 			if (stderr.trim()) logger.debug({ sub, stderr: stderr.trim() }, "plug cli stderr");

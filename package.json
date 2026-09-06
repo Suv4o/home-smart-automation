@@ -14,12 +14,19 @@
     "snapshot": "node --env-file=.env src/cli.ts snapshot",
     "charger": "node --env-file=.env src/cli.ts charger",
     "seed": "node --env-file=.env src/cli.ts seed",
-    "watch": "node --env-file=.env src/cli.ts watch"
+    "watch": "node --env-file=.env src/cli.ts watch",
+    "ui:dev": "npm --prefix ui run dev",
+    "ui:build": "npm --prefix ui run build",
+    "ui:install": "npm --prefix ui install",
+    "demo": "node --env-file=.env src/cli.ts watch --demo"
   },
   "dependencies": {
+    "@hono/node-server": "^2.1.1",
+    "hono": "^4.13.7",
     "node-cron": "^4.6.0",
     "pino": "^10.3.1",
     "pino-pretty": "^13.1.3",
+    "suncalc3": "^2.0.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {

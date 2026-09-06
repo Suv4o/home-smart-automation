@@ -26,6 +26,10 @@ blogs/
 *.log
 out/
 
+# --- UI build output ---
+ui/node_modules/
+ui/dist/
+
 # --- Python ---
 __pycache__/
 *.pyc

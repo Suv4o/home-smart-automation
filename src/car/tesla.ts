@@ -77,6 +77,30 @@ export class TeslaCar {
 		}
 	}
 
+	/**
+	 * The cached reading and its age, WITHOUT ever contacting the car.
+	 *
+	 * This is what the dashboard uses. Reading `state charge` wakes the vehicle,
+	 * so the display path must never call `soc()` - only the decision tick and
+	 * the explicit "check now" button are allowed to do that.
+	 */
+	async cachedSoc(): Promise<{ soc: number; at: number } | null> {
+		const c = await this.#readCache();
+		return c ? { soc: c.soc, at: c.at } : null;
+	}
+
+	/** Forces a fresh read (wakes the car). Used by the explicit refresh action. */
+	async refresh(): Promise<CarSoc | null> {
+		try {
+			const soc = await this.#readFresh();
+			await this.#writeCache(soc);
+			return { soc, stale: false };
+		} catch (err) {
+			logger.warn({ err: String(err) }, "manual car refresh failed");
+			return null;
+		}
+	}
+
 	async #invoke(sub: string[]): Promise<string> {
 		try {
 			const { stdout } = await run(this.#cmd, [...this.#args, ...sub], { timeout: COMMAND_TIMEOUT_MS });

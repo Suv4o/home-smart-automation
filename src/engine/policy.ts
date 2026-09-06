@@ -1,6 +1,7 @@
 import type { ChargerState } from "../charger/types.ts";
 import type { PolicyConfig } from "../config.ts";
 import type { EnergySnapshot } from "../providers/types.ts";
+import type { Override } from "./override.ts";
 
 export type Action = "on" | "off";
 export type Window = "free" | "morning" | "solar";
@@ -9,6 +10,13 @@ export interface Decision {
 	readonly action: Action;
 	readonly window: Window;
 	readonly reason: string;
+	/**
+	 * "override" when a manual instruction produced this decision. The car SOC
+	 * gate steps aside for those - charging above 80% is a legitimate owner
+	 * choice ("I leave at 5am"). Nothing lets an override past the main-switch
+	 * guard.
+	 */
+	readonly source?: "policy" | "override";
 }
 
 export interface DecideInput {
@@ -17,6 +25,8 @@ export interface DecideInput {
 	readonly snapshot: EnergySnapshot;
 	readonly charger: ChargerState;
 	readonly config: PolicyConfig;
+	/** Active manual override, if any. Applied after the main-switch guard. */
+	readonly override?: Override | null;
 }
 
 /**
@@ -40,7 +50,7 @@ export function windowFor(minutesOfDay: number, config: PolicyConfig): Window {
  * between runs. That lets a 30-minute cron reconstruct the right decision every
  * tick without any external store.
  */
-export function decide({ minutesOfDay, snapshot, charger, config }: DecideInput): Decision {
+export function decide({ minutesOfDay, snapshot, charger, config, override }: DecideInput): Decision {
 	const window = windowFor(minutesOfDay, config);
 
 	// 0. Main-switch protection (overrides every window, including free power).
@@ -48,6 +58,14 @@ export function decide({ minutesOfDay, snapshot, charger, config }: DecideInput)
 	const guard = mainSwitchGuard(snapshot, charger, config);
 	if (!guard.safe) {
 		return { action: "off", window, reason: guard.reason };
+	}
+
+	// 0b. Manual override from the dashboard. Deliberately BELOW the main-switch
+	//     guard: a tap on a tablet must never be able to trip the breaker.
+	if (override) {
+		return override.mode === "force_on"
+			? { action: "on", window, reason: "manual override: charge now", source: "override" }
+			: { action: "off", window, reason: "manual override: charging paused", source: "override" };
 	}
 
 	// 1. Free-power window: always charge. The house battery is also charging
@@ -157,6 +175,8 @@ export interface CarSoc {
  */
 export function applyCarSocGate(base: Decision, carSoc: CarSoc | null, charger: ChargerState, config: PolicyConfig): Decision {
 	if (base.action === "off") return base;
+	// A manual "charge now" outranks the car's own 80% limit.
+	if (base.source === "override") return base;
 
 	if (carSoc === null) {
 		if (config.chargeIfCarUnknown) {
