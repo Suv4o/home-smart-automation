@@ -1,6 +1,11 @@
 import type { Palette } from "./palette.ts";
 
-export type FlowTone = "good" | "warning" | "battery" | "critical" | "idle";
+/**
+ * `waiting` is the plug being live with nothing drawing from it - the cable
+ * isn't in the car. It is not a flow, so it never animates; it just has to look
+ * different from a dead wire.
+ */
+export type FlowTone = "good" | "warning" | "battery" | "critical" | "waiting" | "idle";
 
 /**
  * Tone colours come from the palette, because the day and night surfaces need
@@ -17,6 +22,9 @@ export function toneColor(p: Palette, tone: FlowTone, idle: string): string {
 			return p.flowBattery;
 		case "critical":
 			return p.flowCritical;
+		case "waiting":
+			// A text tone, so it is legible on either surface by construction.
+			return p.inkDim;
 		default:
 			return idle;
 	}
@@ -36,5 +44,5 @@ export function toneColor(p: Palette, tone: FlowTone, idle: string): string {
  * survives with no colour perception at all.
  */
 export function dashed(tone: FlowTone): boolean {
-	return tone === "warning" || tone === "critical";
+	return tone === "warning" || tone === "critical" || tone === "waiting";
 }

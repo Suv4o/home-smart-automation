@@ -6,8 +6,12 @@ interface Props {
 	/** One line of context under the title. */
 	description?: string;
 	children?: ReactNode;
-	confirmLabel: string;
-	onConfirm: () => void;
+	/**
+	 * Omit both to get an information-only dialog: no choice to make, so it
+	 * closes with a single button instead of offering Cancel and Confirm.
+	 */
+	confirmLabel?: string;
+	onConfirm?: () => void;
 	onClose: () => void;
 	confirmDisabled?: boolean;
 	busy?: boolean;
@@ -75,20 +79,26 @@ export function Dialog({
 					<button
 						type="button"
 						onClick={onClose}
-						className="flex-1 rounded-2xl bg-page px-4 py-3.5 text-lg font-medium text-ink-dim active:bg-hairline"
+						className={
+							onConfirm
+								? "flex-1 rounded-2xl bg-page px-4 py-3.5 text-lg font-medium text-ink-dim active:bg-hairline"
+								: "flex-1 rounded-2xl bg-page px-4 py-3.5 text-lg font-semibold text-ink active:bg-hairline"
+						}
 					>
-						Cancel
+						{onConfirm ? "Cancel" : "Close"}
 					</button>
-					<button
-						type="button"
-						onClick={onConfirm}
-						disabled={confirmDisabled || busy}
-						className={`flex-1 rounded-2xl px-4 py-3.5 text-lg font-semibold text-white disabled:opacity-40 ${
-							tone === "critical" ? "bg-critical" : "bg-good"
-						}`}
-					>
-						{busy ? "Working…" : confirmLabel}
-					</button>
+					{onConfirm && (
+						<button
+							type="button"
+							onClick={onConfirm}
+							disabled={confirmDisabled || busy}
+							className={`flex-1 rounded-2xl px-4 py-3.5 text-lg font-semibold text-white disabled:opacity-40 ${
+								tone === "critical" ? "bg-critical" : "bg-good"
+							}`}
+						>
+							{busy ? "Working…" : confirmLabel}
+						</button>
+					)}
 				</div>
 			</div>
 		</div>

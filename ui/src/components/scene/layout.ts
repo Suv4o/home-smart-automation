@@ -97,10 +97,14 @@ export const ROUTES = {
  * Where each value sits. Hand-placed rather than taken from route midpoints -
  * the routes converge on the junction, so midpoints landed on top of one
  * another.
+ *
+ * The grid label is lifted just clear of the mast cap - enough that the whole
+ * powerline shows, and no further, so the number still reads as belonging to the
+ * pole rather than floating off in the sky.
  */
 export const LABEL_AT = {
 	solar: { x: -46, y: 150, z: 44 },
-	grid: { x: 214, y: 132, z: 30 },
+	grid: { x: 223, y: 157, z: 30 },
 	battery: { x: 150, y: 30, z: 118 },
 	car: { x: 26, y: 40, z: 168 },
 } as const satisfies Record<string, Vec3>;

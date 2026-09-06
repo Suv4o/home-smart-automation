@@ -29,11 +29,14 @@ const ACTIVE_W = 50;
  * would make this stutter on an old tablet.
  */
 export function FlowTrace({ id, points, watts, tone, forward = true, p }: Props) {
-	const active = Math.abs(watts) >= ACTIVE_W && tone !== "idle";
+	// "waiting" is drawn, but never animated: the socket is live and nothing is
+	// moving through it, so dots and an arrowhead would be a lie.
+	const waiting = tone === "waiting";
+	const active = !waiting && Math.abs(watts) >= ACTIVE_W && tone !== "idle";
 	const ordered = forward ? points : [...points].reverse();
 	const d = roundedPath(ordered, 14);
-	const colour = active ? toneColor(p, tone, p.muted) : p.muted;
-	const dash = active && dashed(tone) ? "13 9" : undefined;
+	const colour = active || waiting ? toneColor(p, tone, p.muted) : p.muted;
+	const dash = (active && dashed(tone)) || waiting ? "13 9" : undefined;
 
 	// ~3kW moves briskly; small flows crawl; nothing ever strobes.
 	const duration = active ? Math.min(6, Math.max(1.6, 6000 / Math.abs(watts))) : 0;
@@ -46,11 +49,11 @@ export function FlowTrace({ id, points, watts, tone, forward = true, p }: Props)
 				d={d}
 				fill="none"
 				stroke={colour}
-				strokeWidth={active ? 3 : 2}
+				strokeWidth={active ? 3 : waiting ? 2.5 : 2}
 				strokeDasharray={dash}
 				strokeLinecap="round"
 				strokeLinejoin="round"
-				opacity={active ? 0.62 : 0.3}
+				opacity={active ? 0.62 : waiting ? 0.8 : 0.3}
 				markerEnd={active ? `url(#arrow-${id})` : undefined}
 			/>
 

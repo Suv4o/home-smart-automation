@@ -1,4 +1,5 @@
 import type { PolicyConfig } from "../config.ts";
+import type { ChargeState } from "../engine/charge-state.ts";
 import type { Override } from "../engine/override.ts";
 import type { Action, Window } from "../engine/policy.ts";
 import type { Sky } from "./sky.ts";
@@ -19,6 +20,11 @@ export interface DashboardState {
 		at: string;
 	} | null;
 	readonly charger: { on: boolean; powerW: number } | null;
+	/**
+	 * What the plug is actually doing. "waiting" means it is live but the car
+	 * isn't drawing - the cable is probably not plugged in.
+	 */
+	readonly chargeState: ChargeState;
 	/** From cache only - the display never wakes the car. */
 	readonly car: { soc: number; at: string; ageMs: number } | null;
 	readonly decision: { action: Action; window: Window; reason: string; source: "policy" | "override" } | null;

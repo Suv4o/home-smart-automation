@@ -198,3 +198,27 @@ describe("dot density follows wire length", () => {
 		assert.equal(dotCount(10_000), 3);
 	});
 });
+
+/**
+ * A live plug with no cable in the car is the case the dashboard used to get
+ * wrong, so the "waiting" tone is pinned: visible, distinct from a dead wire,
+ * and never animated - nothing is flowing through it.
+ */
+describe("waiting wire", () => {
+	it("is dashed, like everything that isn't free-flowing energy", () => {
+		assert.equal(dashed("waiting"), true);
+	});
+
+	it("uses a tone distinct from both a live charge and a dead wire", () => {
+		const live = toneColor(DAY, "good", DAY.muted);
+		const dead = DAY.muted;
+		const waiting = toneColor(DAY, "waiting", DAY.muted);
+		assert.notEqual(waiting, live, "must not look like a charge in progress");
+		assert.notEqual(waiting, dead, "must not look like a dormant wire");
+	});
+
+	it("keeps that separation on the dark surface too", () => {
+		assert.notEqual(toneColor(NIGHT, "waiting", NIGHT.muted), NIGHT.muted);
+		assert.notEqual(toneColor(NIGHT, "waiting", NIGHT.muted), toneColor(NIGHT, "good", NIGHT.muted));
+	});
+});

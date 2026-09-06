@@ -14,8 +14,7 @@ const hhmm = (def: string) =>
 		.default(def)
 		.transform(toMinutes);
 
-const Schema = z
-	.object({
+const Base = z.object({
 		// --- Solarman ---
 		SOLARMAN_STATION_ID: z.string().optional(),
 		// Only used by the (Turnstile-blocked) password login path.
@@ -47,8 +46,18 @@ const Schema = z
 		// --- Car battery (Tesla, read over Bluetooth via tesla-control) ---
 		// Don't charge if the car is already at/above this.
 		CAR_MAX_SOC: z.coerce.number().min(0).max(100).default(80),
-		// How long to trust one car reading before waking the car again.
+		// How long to trust one car reading before waking the car again. This is
+		// the idle figure: reading an asleep car wakes it, so it is deliberately
+		// slow.
 		CAR_SOC_TTL_MINUTES: z.coerce.number().positive().default(60),
+		// The same, but while the car is actually drawing power. A charging car is
+		// already awake, so reading it costs no wake - the figure can be far
+		// fresher. Lower it if you want the percentage to climb more visibly; each
+		// read is a BLE round-trip that takes a few seconds and can fail.
+		CAR_SOC_TTL_CHARGING_MINUTES: z.coerce.number().positive().default(5),
+		// Below this draw the plug is live but nothing is charging (no cable in the
+		// car). The mobile connector pulls ~2kW, an idle socket a few watts.
+		CAR_DRAW_MIN_W: z.coerce.number().positive().default(500),
 		// The tesla-control binary (on PATH, or an absolute path).
 		TESLA_CONTROL_CMD: z.string().default("tesla-control"),
 		// If the car can't be read, charge anyway (relies on the car's own charge
@@ -76,7 +85,19 @@ const Schema = z
 		SCHEDULE_CRON: z.string().min(1).default("0,30 * * * *"),
 
 		LOG_LEVEL: z.string().default("info"),
-	})
+});
+
+/**
+ * Every variable `loadConfig` reads. `.env.example` is checked against this list
+ * by a test, so a new setting cannot be added without documenting it.
+ *
+ * Variables consumed by child processes rather than by us - the TAPO_* pair that
+ * scripts/plug_local.py reads, and the TESLA_* ones tesla-control reads - are not
+ * here; the same test covers those from its own list.
+ */
+export const ENV_KEYS: readonly string[] = Object.keys(Base.shape).sort();
+
+const Schema = Base
 	.refine((c) => c.MORNING_START < c.FREE_START && c.FREE_START < c.FREE_END, {
 		path: ["FREE_START"],
 		error: "expected MORNING_START < FREE_START < FREE_END",
@@ -107,7 +128,7 @@ export interface AppConfig {
 	readonly solarman: { stationId: string | undefined; email: string | undefined; password: string | undefined };
 	readonly tapo: { cliCmd: string };
 	/** Tesla car reader (tesla-control CLI + SOC cache TTL). */
-	readonly car: { controlCmd: string; socTtlMs: number };
+	readonly car: { controlCmd: string; socTtlMs: number; socTtlChargingMs: number; drawMinW: number };
 	readonly policy: PolicyConfig;
 	/** Dashboard HTTP server + display polling. */
 	readonly ui: {
@@ -142,7 +163,12 @@ export function loadConfig(): AppConfig {
 	return {
 		solarman: { stationId: e.SOLARMAN_STATION_ID, email: e.SOLARMAN_EMAIL, password: e.SOLARMAN_PASSWORD },
 		tapo: { cliCmd: e.PLUG_CLI_CMD },
-		car: { controlCmd: e.TESLA_CONTROL_CMD, socTtlMs: e.CAR_SOC_TTL_MINUTES * 60_000 },
+		car: {
+			controlCmd: e.TESLA_CONTROL_CMD,
+			socTtlMs: e.CAR_SOC_TTL_MINUTES * 60_000,
+			socTtlChargingMs: e.CAR_SOC_TTL_CHARGING_MINUTES * 60_000,
+			drawMinW: e.CAR_DRAW_MIN_W,
+		},
 		policy: {
 			morningStartMin: e.MORNING_START,
 			freeStartMin: e.FREE_START,

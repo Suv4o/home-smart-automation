@@ -1,6 +1,7 @@
 import type { AppConfig } from "../config.ts";
 import { logger } from "../logger.ts";
 import type { DashboardState, StateStore } from "./state.ts";
+import { chargeState } from "../engine/charge-state.ts";
 import { skyFor } from "./sky.ts";
 
 /**
@@ -44,6 +45,23 @@ export const SCENARIOS: Scenario[] = [
 			charger: { on: true, powerW: 2010 },
 			car: { soc: 41, at: b.at, ageMs: 22 * 60_000 },
 			decision: { action: "on", window: "free", reason: "free-power window (10:00–14:00) — always charge", source: "policy" },
+		}),
+	},
+	{
+		name: "plug on · waiting for the car to be plugged in",
+		hour: 12.5,
+		build: (b) => ({
+			...b,
+			energy: { solarW: 5400, loadW: 800, gridW: -4600, batteryW: 0, batterySoc: 100, at: b.at },
+			// Live socket, nothing drawing: the giveaway is the handful of watts.
+			charger: { on: true, powerW: 4 },
+			car: { soc: 52, at: b.at, ageMs: 3 * 3_600_000 },
+			decision: {
+				action: "on",
+				window: "solar",
+				reason: "house battery 100% and solar is producing (5400W) — charging regardless of coverage",
+				source: "policy",
+			},
 		}),
 	},
 	{
@@ -109,6 +127,7 @@ export function startDemo(config: AppConfig, store: StateStore, signal: AbortSig
 			sky: skyFor(when, config.location.latitude, config.location.longitude),
 			energy: null,
 			charger: null,
+			chargeState: "off",
 			car: null,
 			decision: null,
 			override: null,
@@ -125,7 +144,10 @@ export function startDemo(config: AppConfig, store: StateStore, signal: AbortSig
 			},
 			errors: [],
 		};
-		store.set(s.build(base));
+		// Derive it exactly as the real World does, so the demo can't drift from
+		// production behaviour.
+		const built = s.build(base);
+		store.set({ ...built, chargeState: chargeState(built.charger, config.car.drawMinW) });
 		logger.info({ scenario: s.name, sky: base.sky.phase }, "demo");
 		i++;
 	};

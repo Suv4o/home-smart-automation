@@ -1,5 +1,6 @@
 import { type ReactNode, useRef, useState } from "react";
 import type { DashboardState } from "../../lib/types.ts";
+import { AutoIcon, BoltIcon, CarIcon, PauseIcon } from "../icons.tsx";
 import { Dialog } from "./Dialog.tsx";
 import {
 	clampHours,
@@ -334,37 +335,3 @@ function Chevron({ pointsDown }: { pointsDown: boolean }) {
 		</svg>
 	);
 }
-
-const ICON = {
-	width: 24,
-	height: 24,
-	viewBox: "0 0 24 24",
-	fill: "none",
-	stroke: "currentColor",
-	strokeWidth: 1.9,
-	strokeLinecap: "round",
-	strokeLinejoin: "round",
-} as const;
-
-const BoltIcon = () => (
-	<svg {...ICON} aria-hidden>
-		<path d="M13 2L4.5 13.5H11l-1 8.5 8.5-11.5H12z" />
-	</svg>
-);
-const PauseIcon = () => (
-	<svg {...ICON} aria-hidden>
-		<path d="M9 4v16M15 4v16" />
-	</svg>
-);
-const AutoIcon = () => (
-	<svg {...ICON} aria-hidden>
-		<path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" />
-	</svg>
-);
-const CarIcon = () => (
-	<svg {...ICON} aria-hidden>
-		<path d="M5 17h14M4 17v-4l2-5h12l2 5v4M7.5 17v2M16.5 17v2" />
-		<circle cx="8" cy="13.5" r="1.1" />
-		<circle cx="16" cy="13.5" r="1.1" />
-	</svg>
-);

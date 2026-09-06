@@ -17,6 +17,8 @@ export interface DashboardState {
 	sky: Sky;
 	energy: { solarW: number; loadW: number; gridW: number; batteryW: number; batterySoc: number; at: string } | null;
 	charger: { on: boolean; powerW: number } | null;
+	/** "waiting" = plug live but nothing drawing, i.e. no cable in the car. */
+	chargeState: "off" | "waiting" | "charging";
 	car: { soc: number; at: string; ageMs: number } | null;
 	decision: { action: Action; window: Window; reason: string; source: "policy" | "override" } | null;
 	override: { mode: "force_on" | "force_off"; until: number; setAt: number } | null;

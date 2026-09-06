@@ -1,8 +1,8 @@
-import { ago, freshness, power } from "../lib/format.ts";
+import { power } from "../lib/format.ts";
 import type { DashboardState } from "../lib/types.ts";
 import { FlowTrace, toneColor } from "./scene/FlowTrace.tsx";
 import { anchor } from "./scene/iso.ts";
-import { LABEL_AT, project, ROUTES } from "./scene/layout.ts";
+import { CAR, LABEL_AT, project, ROUTES } from "./scene/layout.ts";
 import { type Palette, skyPalette } from "./scene/palette.ts";
 import {
 	Battery,
@@ -38,19 +38,23 @@ export function HouseScene({ state }: { state: DashboardState }) {
 	const solarW = energy?.solarW ?? 0;
 	const gridW = energy?.gridW ?? 0;
 	const batteryW = energy?.batteryW ?? 0;
-	const carW = charger?.on ? Math.max(charger.powerW, 0) || state.limits.carPowerW : 0;
+	// Only a car that is really drawing counts as charging. A live plug with
+	// nothing on the end of it is "waiting", not a charge in progress.
+	const charging = state.chargeState === "charging";
+	const waitingForCar = state.chargeState === "waiting";
+	const carW = charging ? Math.max(charger?.powerW ?? 0, 0) || state.limits.carPowerW : 0;
 
 	const importing = gridW > 0;
 	const blocked = decision?.action === "off" && /main-switch/.test(decision.reason);
 	const solarIntensity = Math.min(1, solarW / 4000);
 
 	const gridTone = blocked ? "critical" : importing ? "warning" : "good";
-	const carTone = blocked ? "critical" : charger?.on ? "good" : "idle";
-	const fresh = freshness(car ? car.ageMs : null);
+	const carTone = blocked ? "critical" : charging ? "good" : waitingForCar ? "waiting" : "idle";
 
 	const solarLabel = anchor(LABEL_AT.solar);
 	const gridLabel = anchor(LABEL_AT.grid);
 	const battLabel = anchor(LABEL_AT.battery);
+	const carAt = anchor(CAR);
 
 	return (
 		<svg viewBox={VIEW} className="h-full w-full" preserveAspectRatio="xMidYMid meet" role="img"
@@ -67,7 +71,7 @@ export function HouseScene({ state }: { state: DashboardState }) {
 			<Window p={p} night={night} />
 			<GridConnection p={p} tone={Math.abs(gridW) >= 50 ? toneColor(p, gridTone, p.muted) : p.muted} />
 			<Battery p={p} soc={energy?.batterySoc ?? 0} low={(energy?.batterySoc ?? 100) <= state.limits.batteryStopPct + 5} />
-			<Charger p={p} active={Boolean(charger?.on)} />
+			<Charger p={p} active={charging} />
 
 			{/* Wires sit above the buildings they run across, below the foreground. */}
 			<FlowTrace id="solar" points={project(ROUTES.solarToJunction)} watts={solarW} tone="good" p={p} />
@@ -91,7 +95,7 @@ export function HouseScene({ state }: { state: DashboardState }) {
 			{Math.abs(batteryW) >= 50 && (
 				<Value x={battLabel.x} y={battLabel.y} text={power(batteryW)} colour={p.flowBattery} p={p} />
 			)}
-			{car && fresh !== "fresh" && <Note x={0} y={232} text={`car checked ${ago(car.ageMs)}`} p={p} />}
+			{waitingForCar && <Note x={carAt.x} y={carAt.y + 46} text="waiting for the car to be plugged in" p={p} warn />}
 		</svg>
 	);
 }
@@ -133,12 +137,29 @@ function Value({ x, y, text, colour, p }: { x: number; y: number; text: string; 
  * the lawn's edge line. Sitting it on the surface colour makes it legible over
  * whatever it happens to land on, in either palette.
  */
-function Note({ x, y, text, p }: { x: number; y: number; text: string; p: Palette }) {
-	const w = text.length * 6.7 + 26;
+function Note({ x, y, text, p, warn = false }: { x: number; y: number; text: string; p: Palette; warn?: boolean }) {
+	const textW = text.length * 6.7;
+	const padL = warn ? 11 : 13;
+	const iconW = warn ? 13 + 6 : 0; // glyph plus the gap after it
+	const w = padL + iconW + textW + 13;
+	const left = -w / 2;
+
 	return (
 		<g transform={`translate(${x} ${y})`}>
-			<rect x={-w / 2} y={-11} width={w} height={22} rx={11} fill={p.surface} stroke={p.hairline} strokeWidth={1} />
-			<text textAnchor="middle" y={4} fill={p.inkDim} style={{ fontSize: 12.5 }}>
+			<rect x={left} y={-11} width={w} height={22} rx={11} fill={p.surface} stroke={p.hairline} strokeWidth={1} />
+
+			{warn && (
+				// Drawn in place rather than reusing the shared icon set: those are
+				// sized for page chrome, and this has to sit on the scene's own
+				// coordinate grid so it scales with the illustration.
+				<g transform={`translate(${left + padL + 6.5} 0)`} stroke={p.flowWarning} strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" fill="none">
+					<path d="M0,-5.4 L6,5 L-6,5 Z" />
+					<path d="M0,-1.8 v2.6" />
+					<path d="M0,3.3 h0.01" />
+				</g>
+			)}
+
+			<text x={left + padL + iconW} y={4} fill={p.inkDim} style={{ fontSize: 12.5 }}>
 				{text}
 			</text>
 		</g>

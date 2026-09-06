@@ -1,5 +1,7 @@
-import { ago, freshness, power } from "../lib/format.ts";
+import type { ReactNode } from "react";
+import { ago, type Freshness, freshness, power } from "../lib/format.ts";
 import type { DashboardState } from "../lib/types.ts";
+import { CarIcon, GridIcon, HomeIcon, SolarIcon } from "./icons.tsx";
 
 /** The KPI row: four numbers, readable from across the room. */
 export function StatStrip({ state }: { state: DashboardState }) {
@@ -14,9 +16,10 @@ export function StatStrip({ state }: { state: DashboardState }) {
 
 	return (
 		<div className="grid grid-cols-4 gap-px bg-hairline">
-			<Tile label="solar" value={e ? power(e.solarW) : "—"} tone={e && e.solarW > 50 ? "text-good" : "text-ink"} />
-			<Tile label="home" value={e ? power(e.loadW) : "—"} tone="text-ink" />
+			<Tile icon={<SolarIcon />} label="solar" value={e ? power(e.solarW) : "—"} tone={e && e.solarW > 50 ? "text-good" : "text-ink"} />
+			<Tile icon={<HomeIcon />} label="home" value={e ? power(e.loadW) : "—"} tone="text-ink" />
 			<Tile
+				icon={<GridIcon />}
 				label={importing ? "grid in" : "grid out"}
 				value={e ? power(e.gridW) : "—"}
 				tone={
@@ -29,23 +32,62 @@ export function StatStrip({ state }: { state: DashboardState }) {
 								: "text-good"
 				}
 			/>
+			{/* Everything about the car sits here - percentage, whether it is
+			    actually charging, and how old the reading is. The illustration used
+			    to carry a second caption underneath it, which just cluttered the
+			    scene with something this tile already had room for. */}
 			<Tile
+				icon={<CarIcon />}
 				label="car"
 				value={car ? `${Math.round(car.soc)}%` : "unknown"}
 				tone={fresh === "stale" ? "text-muted" : "text-ink"}
-				// Age is always written out; dimming alone never carries the meaning.
-				note={car && fresh !== "fresh" ? ago(car.ageMs) : undefined}
+				// Never dimming alone: the state or the age is always written out.
+				note={carNote(state, car ? ago(car.ageMs) : null, fresh)}
 			/>
 		</div>
 	);
 }
 
-function Tile({ label, value, tone, note }: { label: string; value: string; tone: string; note?: string }) {
+/**
+ * The icon rides with the label rather than above the number: the value is what
+ * you read from across the room, and putting a glyph over it would compete for
+ * that first glance. It also inherits the muted label tone, so it recedes.
+ */
+function Tile({
+	icon,
+	label,
+	value,
+	tone,
+	note,
+}: {
+	icon: ReactNode;
+	label: string;
+	value: string;
+	tone: string;
+	note?: string;
+}) {
 	return (
 		<div className="bg-page px-3 py-4 text-center">
 			<div className={`text-3xl font-bold tabular-nums ${tone}`}>{value}</div>
-			<div className="mt-1 text-base uppercase tracking-wide text-muted">{label}</div>
+			<div className="mt-1 flex items-center justify-center gap-1.5 text-base uppercase tracking-wide text-muted">
+				{icon}
+				<span>{label}</span>
+			</div>
 			{note && <div className="mt-0.5 text-sm text-muted">{note}</div>}
 		</div>
 	);
+}
+
+/**
+ * The one line under the car percentage.
+ *
+ * While the car is drawing power the figure is being re-read every few minutes,
+ * so saying "charging" is more useful than an age that is always near zero. A
+ * live plug with nothing on the end says so plainly, because that is the case
+ * people misread. Otherwise it falls back to how old the reading is.
+ */
+function carNote(state: DashboardState, age: string | null, fresh: Freshness): string | undefined {
+	if (state.chargeState === "charging") return "charging";
+	if (state.chargeState === "waiting") return "not plugged in";
+	return fresh !== "fresh" && age ? age : undefined;
 }

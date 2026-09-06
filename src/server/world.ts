@@ -1,6 +1,7 @@
 import type { TeslaCar } from "../car/tesla.ts";
 import type { ChargerController, ChargerState } from "../charger/types.ts";
 import type { AppConfig } from "../config.ts";
+import { type ChargeState, chargeState } from "../engine/charge-state.ts";
 import { loadOverride } from "../engine/override.ts";
 import { decide } from "../engine/policy.ts";
 import { logger } from "../logger.ts";
@@ -20,12 +21,19 @@ const MAX_ERRORS = 3;
  * upstream only updates every ~5 minutes, so a re-fetch is throttled to
  * `solarmanMinIntervalMs`. The plug is local and cheap, so it's read every time.
  *
- * The car is NEVER read here - `buildState` uses the cache only. Waking the
- * vehicle is reserved for the decision tick and the explicit refresh action.
+ * The car is read here in exactly one case: while it is genuinely drawing power.
+ * A charging car is already awake, so polling it costs no wake, and the
+ * percentage can then climb visibly instead of sitting on an hour-old figure.
+ * Any other time `buildState` uses the cache only - waking a sleeping vehicle
+ * stays reserved for the decision tick and the explicit refresh action.
  */
 export class World {
 	#snapshot: { value: EnergySnapshot; at: number } | null = null;
 	#errors: string[] = [];
+	/** Previous charge state, so we can spot the moment a charge begins. */
+	#wasCharging = false;
+	/** One BLE read at a time; they are slow and the display polls far faster. */
+	#carReadInFlight = false;
 
 	readonly #provider: SolarProvider;
 	readonly #charger: ChargerController;
@@ -89,6 +97,8 @@ export class World {
 		const clock = melbourneClock(now);
 		const { policy } = this.#config;
 
+		const charge = chargeState(charger, this.#config.car.drawMinW);
+
 		const decision =
 			snapshot && charger
 				? decide({ minutesOfDay: clock.minutesOfDay, snapshot, charger, config: policy, override })
@@ -108,6 +118,7 @@ export class World {
 					}
 				: null,
 			charger,
+			chargeState: charge,
 			car: car ? { soc: car.soc, at: new Date(car.at).toISOString(), ageMs: Date.now() - car.at } : null,
 			decision: decision
 				? {
@@ -131,7 +142,42 @@ export class World {
 			},
 			errors: [...this.#errors],
 		};
+
+		// Kick off a battery read if one is due. Deliberately not awaited: a BLE
+		// round-trip takes seconds and must not hold up the display refresh. The
+		// value lands in the cache and the follow-up publish picks it up.
+		void this.#refreshCarWhileCharging(charge, car?.at ?? null);
+		this.#wasCharging = charge === "charging";
+
 		return state;
+	}
+
+	/**
+	 * Keep the battery percentage fresh for as long as the car is drawing power.
+	 *
+	 * Reads immediately when a charge starts - that first figure is the one worth
+	 * having, since it anchors everything the driver watches afterwards - and then
+	 * at `socTtlChargingMs` while it continues.
+	 */
+	async #refreshCarWhileCharging(charge: ChargeState, cachedAt: number | null): Promise<void> {
+		if (charge !== "charging" || this.#carReadInFlight) return;
+
+		const justStarted = !this.#wasCharging;
+		const stale = cachedAt === null || Date.now() - cachedAt >= this.#config.car.socTtlChargingMs;
+		if (!justStarted && !stale) return;
+
+		this.#carReadInFlight = true;
+		try {
+			const reading = await this.#car.refresh();
+			if (reading) {
+				logger.info({ soc: reading.soc, trigger: justStarted ? "charge started" : "due" }, "car battery read while charging");
+				await this.publish(); // show the new figure without waiting for the next poll
+			}
+		} catch (err) {
+			this.#noteError("car", err);
+		} finally {
+			this.#carReadInFlight = false;
+		}
 	}
 
 	/** Build and publish, so every SSE client sees it. */
