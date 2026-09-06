@@ -61,6 +61,7 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 
 	const [hoursFor, setHoursFor] = useState<Mode | null>(null);
 	const [hours, setHours] = useState(HOURS_DEFAULT);
+	const [releaseWhenDone, setReleaseWhenDone] = useState(false);
 	const [askCar, setAskCar] = useState(false);
 	const [pinOpen, setPinOpen] = useState(false);
 	const [pin, setPin] = useState("");
@@ -163,6 +164,7 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 							hint={`for ${hoursLabel(HOURS_DEFAULT)}`}
 							onClick={() => {
 								setHours(HOURS_DEFAULT);
+								setReleaseWhenDone(false);
 								setHoursFor("force_on");
 							}}
 						/>
@@ -208,10 +210,25 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 				onConfirm={() => {
 					const mode = hoursFor;
 					setHoursFor(null);
-					if (mode) act("/api/override", "POST", { mode, hours: clampHours(hours) });
+					if (mode) {
+						act("/api/override", "POST", {
+							mode,
+							hours: clampHours(hours),
+							// Only meaningful when charging; a pause has nothing to finish.
+							releaseWhenDone: mode === "force_on" && releaseWhenDone,
+						});
+					}
 				}}
 			>
 				<HoursSlider hours={hours} onChange={setHours} />
+				{hoursFor === "force_on" && (
+					<Check
+						checked={releaseWhenDone}
+						onChange={setReleaseWhenDone}
+						label="Stop early when the car is full"
+						hint="Hands back to the schedule as soon as the car stops charging, instead of holding the charger on for the rest of the time."
+					/>
+				)}
 			</Dialog>
 
 			<Dialog
@@ -277,6 +294,44 @@ function HoursSlider({ hours, onChange }: { hours: number; onChange: (h: number)
 				<span>{HOURS_MAX}h</span>
 			</div>
 		</div>
+	);
+}
+
+function Check({
+	checked,
+	onChange,
+	label,
+	hint,
+}: {
+	checked: boolean;
+	onChange: (v: boolean) => void;
+	label: string;
+	hint?: string;
+}) {
+	return (
+		<button
+			type="button"
+			role="checkbox"
+			aria-checked={checked}
+			onClick={() => onChange(!checked)}
+			className="mt-5 flex w-full items-start gap-3 rounded-2xl border border-hairline bg-page p-4 text-left active:bg-hairline"
+		>
+			<span
+				className={`mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border-2 ${
+					checked ? "border-good bg-good" : "border-hairline"
+				}`}
+			>
+				{checked && (
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+						<path d="M5 13l4 4L19 7" />
+					</svg>
+				)}
+			</span>
+			<span>
+				<span className="block text-lg font-medium leading-tight text-ink">{label}</span>
+				{hint && <span className="mt-1 block text-sm leading-snug text-muted">{hint}</span>}
+			</span>
+		</button>
 	);
 }
 

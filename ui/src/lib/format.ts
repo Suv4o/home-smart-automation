@@ -47,3 +47,34 @@ export function countdown(untilMs: number, now = Date.now()): string {
 	const h = Math.floor(mins / 60);
 	return `${h}h ${mins % 60}m left`;
 }
+
+/**
+ * A reading older than this can no longer be counted down honestly, so no
+ * remaining time is shown. While the car is charging it is re-read every few
+ * minutes, so this only bites when those reads start failing.
+ */
+const ETA_MAX_AGE_MS = 30 * 60_000;
+
+/**
+ * "1h 20m left" - how much longer the car says it needs.
+ *
+ * The car reports the figure once, at the moment of the reading, so it is
+ * counted down by however long ago that was rather than displayed frozen. Left
+ * as-is it would sit at the same number for minutes at a time and then jump,
+ * which reads as a stuck screen.
+ *
+ * Returns null when there is nothing trustworthy to show: no figure from the
+ * car, or a reading too old to extrapolate from.
+ */
+export function etaLabel(minutesToFull: number | null, ageMs: number): string | null {
+	if (minutesToFull === null || !Number.isFinite(minutesToFull)) return null;
+	if (ageMs > ETA_MAX_AGE_MS) return null;
+
+	const remaining = Math.round(minutesToFull - Math.max(0, ageMs) / 60_000);
+	if (remaining <= 0) return "finishing";
+	if (remaining < 60) return `${remaining}m left`;
+
+	const hours = Math.floor(remaining / 60);
+	const mins = remaining % 60;
+	return mins === 0 ? `${hours}h left` : `${hours}h ${mins}m left`;
+}

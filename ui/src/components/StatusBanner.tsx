@@ -72,6 +72,7 @@ export function StatusBanner({ state, connection }: { state: DashboardState; con
 			{state.override && (
 				<p className="mt-2 inline-block rounded-full bg-surface px-4 py-1 text-lg text-warning">
 					manual override · {countdown(state.override.until)}
+					{state.override.releaseWhenDone && " · or until the car is full"}
 				</p>
 			)}
 			{connection !== "live" && (

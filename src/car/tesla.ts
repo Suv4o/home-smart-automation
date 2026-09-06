@@ -23,6 +23,22 @@ interface CacheEntry {
 	soc: number;
 	/** Epoch ms of the reading. */
 	at: number;
+	/** Minutes the car said it still needed, at `at`. Absent in older caches. */
+	minutesToFull?: number | null;
+	/** The car's own charge limit, e.g. 80. */
+	chargeLimit?: number | null;
+}
+
+/** Everything we take from one `state charge` read. */
+export interface CarReading {
+	soc: number;
+	/**
+	 * Minutes until the car reaches its own charge limit, as the car reports it -
+	 * the same figure the Tesla app shows. Null when the car doesn't report one,
+	 * which is normal when it isn't charging.
+	 */
+	minutesToFull: number | null;
+	chargeLimit: number | null;
 }
 
 export class TeslaReadError extends Error {}
@@ -64,9 +80,9 @@ export class TeslaCar {
 			return { soc: cached.soc, stale: false };
 		}
 		try {
-			const soc = await this.#readFresh();
-			await this.#writeCache(soc);
-			return { soc, stale: false };
+			const reading = await this.#readFresh();
+			await this.#writeCache(reading);
+			return { soc: reading.soc, stale: false };
 		} catch (err) {
 			logger.warn({ err: String(err) }, "car read failed");
 			if (cached) {
@@ -84,17 +100,32 @@ export class TeslaCar {
 	 * so the display path must never call `soc()` - only the decision tick and
 	 * the explicit "check now" button are allowed to do that.
 	 */
-	async cachedSoc(): Promise<{ soc: number; at: number } | null> {
+	async cachedSoc(): Promise<{ soc: number; at: number; minutesToFull: number | null; chargeLimit: number | null } | null> {
 		const c = await this.#readCache();
-		return c ? { soc: c.soc, at: c.at } : null;
+		return c
+			? { soc: c.soc, at: c.at, minutesToFull: c.minutesToFull ?? null, chargeLimit: c.chargeLimit ?? null }
+			: null;
+	}
+
+	/**
+	 * The raw `state charge` JSON, for diagnosing what this car actually reports.
+	 * Wakes the car, so it is only reachable from the CLI.
+	 *
+	 * Location is stripped. The car returns `homeLocation` and `workLocation` as
+	 * precise coordinates, and the whole point of this command is to paste its
+	 * output somewhere - a bug report, a chat, an article. Nothing here needs the
+	 * coordinates, so they never reach the terminal in the first place.
+	 */
+	async rawChargeState(): Promise<string> {
+		return redactLocation(await this.#invoke(["-ble", "state", "charge"]));
 	}
 
 	/** Forces a fresh read (wakes the car). Used by the explicit refresh action. */
 	async refresh(): Promise<CarSoc | null> {
 		try {
-			const soc = await this.#readFresh();
-			await this.#writeCache(soc);
-			return { soc, stale: false };
+			const reading = await this.#readFresh();
+			await this.#writeCache(reading);
+			return { soc: reading.soc, stale: false };
 		} catch (err) {
 			logger.warn({ err: String(err) }, "manual car refresh failed");
 			return null;
@@ -117,11 +148,11 @@ export class TeslaCar {
 		}
 	}
 
-	async #readFresh(): Promise<number> {
+	async #readFresh(): Promise<CarReading> {
 		let lastErr: unknown;
 		for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
 			try {
-				return parseSoc(await this.#invoke(["-ble", "state", "charge"]));
+				return parseCharge(await this.#invoke(["-ble", "state", "charge"]));
 			} catch (err) {
 				lastErr = err;
 				const msg = String(err);
@@ -149,20 +180,32 @@ export class TeslaCar {
 		}
 	}
 
-	async #writeCache(soc: number): Promise<void> {
+	async #writeCache(reading: CarReading): Promise<void> {
 		await mkdir(dirname(CACHE_FILE), { recursive: true, mode: 0o700 });
-		await writeFile(CACHE_FILE, JSON.stringify({ soc, at: Date.now() } satisfies CacheEntry), { mode: 0o600 });
+		const entry: CacheEntry = { ...reading, at: Date.now() };
+		await writeFile(CACHE_FILE, JSON.stringify(entry), { mode: 0o600 });
 	}
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Pull the battery percentage out of `tesla-control state charge` output. The
- * tool prints a JSON object; we prefer `usableBatteryLevel` (what's actually
- * available) and fall back to `batteryLevel`.
+ * Read one number out of a `chargeState` object, trying each spelling in turn.
+ *
+ * `tesla-control` emits protobuf JSON, which is camelCase, but the field names
+ * have moved between versions of the tool and Tesla's own API uses snake_case in
+ * places - so each value is looked up under every name it plausibly carries
+ * rather than assuming one.
  */
-export function parseSoc(stdout: string): number {
+function pick(charge: Record<string, unknown>, keys: string[]): number | null {
+	for (const key of keys) {
+		const v = charge[key];
+		if (typeof v === "number" && Number.isFinite(v)) return v;
+	}
+	return null;
+}
+
+function chargeObject(stdout: string): Record<string, unknown> {
 	const start = stdout.indexOf("{");
 	const end = stdout.lastIndexOf("}");
 	if (start === -1 || end <= start) throw new TeslaReadError(`no JSON in car response: ${stdout.slice(0, 200)}`);
@@ -172,10 +215,78 @@ export function parseSoc(stdout: string): number {
 	} catch {
 		throw new TeslaReadError(`could not parse car response as JSON: ${stdout.slice(0, 200)}`);
 	}
-	const charge = (json as { chargeState?: Record<string, unknown> }).chargeState ?? {};
-	for (const key of ["usableBatteryLevel", "batteryLevel"]) {
-		const v = charge[key];
-		if (typeof v === "number" && Number.isFinite(v)) return v;
+	return (json as { chargeState?: Record<string, unknown> }).chargeState ?? {};
+}
+
+/**
+ * Everything we want from `tesla-control state charge`.
+ *
+ * The battery percentage is required - without it there is no reading. The
+ * remaining-time figure is optional by design: the car only reports it while it
+ * is charging, and not every firmware exposes it, so its absence degrades the
+ * display rather than failing the read.
+ */
+export function parseCharge(stdout: string): CarReading {
+	const charge = chargeObject(stdout);
+
+	const soc = pick(charge, ["usableBatteryLevel", "batteryLevel"]);
+	if (soc === null) {
+		throw new TeslaReadError(`no batteryLevel in car response. chargeState keys: ${Object.keys(charge).join(", ")}`);
 	}
-	throw new TeslaReadError(`no batteryLevel in car response. chargeState keys: ${Object.keys(charge).join(", ")}`);
+
+	// `minutesToChargeLimit` comes first deliberately. The car reports both, and
+	// they only agree when the charge limit is 100% - otherwise "to full" counts
+	// past the point the car will actually stop. The limit is what the Tesla app
+	// shows, and what our own CAR_MAX_SOC gate stops at.
+	let minutesToFull = pick(charge, [
+		"minutesToChargeLimit",
+		"minutes_to_charge_limit",
+		"minutesToFullCharge",
+		"minutes_to_full_charge",
+	]);
+	if (minutesToFull === null) {
+		const hours = pick(charge, ["timeToFullCharge", "time_to_full_charge"]);
+		if (hours !== null) minutesToFull = Math.round(hours * 60);
+	}
+	// A negative figure is meaningless; zero is not - it means "about to finish".
+	if (minutesToFull !== null && minutesToFull < 0) minutesToFull = null;
+
+	return {
+		soc,
+		minutesToFull,
+		chargeLimit: pick(charge, ["chargeLimitSoc", "charge_limit_soc"]),
+	};
+}
+
+/** Keys the car returns that pinpoint where you live. Never printed. */
+const LOCATION_KEYS = ["homeLocation", "workLocation", "latitude", "longitude", "gpsAsOf", "nativeLocationSupported"];
+
+/** Replace any location the car reports with a placeholder, keeping the shape. */
+export function redactLocation(stdout: string): string {
+	const start = stdout.indexOf("{");
+	const end = stdout.lastIndexOf("}");
+	if (start === -1 || end <= start) return stdout;
+	let json: unknown;
+	try {
+		json = JSON.parse(stdout.slice(start, end + 1));
+	} catch {
+		return stdout;
+	}
+	const scrub = (v: unknown): unknown => {
+		if (Array.isArray(v)) return v.map(scrub);
+		if (v && typeof v === "object") {
+			return Object.fromEntries(
+				Object.entries(v as Record<string, unknown>).map(([k, val]) =>
+					LOCATION_KEYS.includes(k) ? [k, "[redacted]"] : [k, scrub(val)],
+				),
+			);
+		}
+		return v;
+	};
+	return JSON.stringify(scrub(json), null, 2);
+}
+
+/** The battery percentage alone. */
+export function parseSoc(stdout: string): number {
+	return parseCharge(stdout).soc;
 }

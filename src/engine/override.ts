@@ -17,6 +17,18 @@ export interface Override {
 	/** Epoch ms after which this override stops applying. */
 	readonly until: number;
 	readonly setAt: number;
+	/**
+	 * Hand back to the schedule the moment the car stops taking power, instead of
+	 * holding the plug on for the rest of the term. Opt-in, and only meaningful
+	 * for `force_on` - there is nothing to finish when pausing.
+	 */
+	readonly releaseWhenDone?: boolean;
+	/**
+	 * Set once the car has actually drawn power under this override. Without it we
+	 * could not tell "finished" from "never started", and an override set before
+	 * plugging in would release itself immediately.
+	 */
+	readonly sawCharging?: boolean;
 }
 
 const FILE = join(
@@ -58,12 +70,25 @@ export async function loadOverride(now = Date.now()): Promise<Override | null> {
 	}
 }
 
-export async function saveOverride(mode: OverrideMode, until: number): Promise<Override> {
-	const o: Override = { mode, until, setAt: Date.now() };
+export async function saveOverride(mode: OverrideMode, until: number, releaseWhenDone = false): Promise<Override> {
+	// Only force_on can "finish", so the flag is dropped rather than stored
+	// misleadingly on a pause.
+	const o: Override = { mode, until, setAt: Date.now(), releaseWhenDone: releaseWhenDone && mode === "force_on" };
+	await write(o);
+	logger.info({ mode, until: new Date(until).toISOString(), releaseWhenDone: o.releaseWhenDone }, "override set");
+	return o;
+}
+
+/** Records that the car has started drawing under this override. */
+export async function markOverrideCharging(o: Override): Promise<Override> {
+	const next: Override = { ...o, sawCharging: true };
+	await write(next);
+	return next;
+}
+
+async function write(o: Override): Promise<void> {
 	await mkdir(dirname(FILE), { recursive: true, mode: 0o700 });
 	await writeFile(FILE, JSON.stringify(o), { mode: 0o600 });
-	logger.info({ mode, until: new Date(until).toISOString() }, "override set");
-	return o;
 }
 
 export async function clearOverride(): Promise<void> {

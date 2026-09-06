@@ -26,7 +26,18 @@ export interface DashboardState {
 	 */
 	readonly chargeState: ChargeState;
 	/** From cache only - the display never wakes the car. */
-	readonly car: { soc: number; at: string; ageMs: number } | null;
+	readonly car: {
+		soc: number;
+		at: string;
+		ageMs: number;
+		/**
+		 * Minutes the car said it still needed, as of `at` - the figure the Tesla
+		 * app shows. Null when the car isn't reporting one. The UI counts down from
+		 * the reading rather than treating it as current.
+		 */
+		minutesToFull: number | null;
+		chargeLimit: number | null;
+	} | null;
 	readonly decision: { action: Action; window: Window; reason: string; source: "policy" | "override" } | null;
 	readonly override: Override | null;
 	/** Thresholds, so the UI can label what it's showing without hardcoding them. */

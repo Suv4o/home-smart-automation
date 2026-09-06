@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { ago, type Freshness, freshness, power } from "../lib/format.ts";
+import { ago, etaLabel, type Freshness, freshness, power } from "../lib/format.ts";
 import type { DashboardState } from "../lib/types.ts";
 import { CarIcon, GridIcon, HomeIcon, SolarIcon } from "./icons.tsx";
 
@@ -87,7 +87,13 @@ function Tile({
  * people misread. Otherwise it falls back to how old the reading is.
  */
 function carNote(state: DashboardState, age: string | null, fresh: Freshness): string | undefined {
-	if (state.chargeState === "charging") return "charging";
+	if (state.chargeState === "charging") {
+		// How much longer the car itself says it needs - the same figure the Tesla
+		// app shows. It beats the word "charging", which the headline already says,
+		// and it is only available while charging anyway.
+		const eta = state.car ? etaLabel(state.car.minutesToFull, state.car.ageMs) : null;
+		return eta ?? "charging";
+	}
 	if (state.chargeState === "waiting") return "not plugged in";
 	return fresh !== "fresh" && age ? age : undefined;
 }

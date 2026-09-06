@@ -5,7 +5,8 @@ import { DryRunCharger } from "./charger/dry-run.ts";
 import { TapoCliCharger } from "./charger/tapo-cli.ts";
 import type { ChargerController } from "./charger/types.ts";
 import { loadConfig } from "./config.ts";
-import { loadOverride } from "./engine/override.ts";
+import { chargeState, overrideAction } from "./engine/charge-state.ts";
+import { clearOverride, loadOverride, markOverrideCharging } from "./engine/override.ts";
 import { applyCarSocGate, type CarSoc, decide } from "./engine/policy.ts";
 import { logger } from "./logger.ts";
 import { seedRefreshToken, SolarmanWebProvider, tokenCachePath } from "./providers/solarman-web.ts";
@@ -23,7 +24,8 @@ home-smart-automation
   seed <refresh-token>           Seed Solarman auth from a browser session's refresh token
   snapshot [--json] [--raw]      Print one reading of the system
   charger <status|on|off>        Read or switch the Tapo plug directly
-  car soc                        Read the car battery % (wakes the car; uses cache)
+  car soc [--raw]                Read the car battery % (wakes the car; uses cache)
+                                 --raw prints the car's whole charge state as JSON
 
 In CI, secrets are set as env vars. Locally, prefix with: node --env-file=.env src/cli.ts <command>
 `.trim();
@@ -117,12 +119,30 @@ async function main(): Promise<number> {
 				return 1;
 			}
 			const car = new TeslaCar(config.car.controlCmd, config.car.socTtlMs);
+
+			// --raw dumps what the car actually sent, which is the way to check
+			// whether this firmware reports a remaining-charge time at all.
+			if (values.raw) {
+				console.log((await car.rawChargeState()).trim());
+				return 0;
+			}
+
 			const reading = await car.soc();
 			if (!reading) {
 				console.error("Could not read the car (asleep/out of range, and no cached value).");
 				return 1;
 			}
 			console.log(`  car battery ${reading.soc}%${reading.stale ? " (cached)" : ""}`);
+
+			const cached = await car.cachedSoc();
+			if (cached?.chargeLimit != null) console.log(`  charge limit ${cached.chargeLimit}%`);
+			if (cached?.minutesToFull != null) {
+				const h = Math.floor(cached.minutesToFull / 60);
+				const m = cached.minutesToFull % 60;
+				console.log(`  time to full ${h ? h + "h " : ""}${m}m (as the car reported it)`);
+			} else {
+				console.log("  time to full  not reported (expected unless the car is charging)");
+			}
 			return 0;
 		}
 
@@ -145,7 +165,24 @@ async function runOnce(config: ReturnType<typeof loadConfig>, dryRun: boolean): 
 	const clock = melbourneClock();
 	const [snapshot, chargerState] = await Promise.all([provider.snapshot(), charger.state()]);
 
-	const override = await loadOverride();
+	// An override that asked to stop when the car finishes is settled here, before
+	// the decision - so the same tick that notices it is done also hands the plug
+	// back to the schedule.
+	let override = await loadOverride();
+	const charge = chargeState(chargerState, config.car.drawMinW);
+	switch (overrideAction(override, charge)) {
+		case "release":
+			await clearOverride();
+			logger.info("car stopped drawing — override released, back to automatic");
+			override = null;
+			break;
+		case "mark-charging":
+			if (override) override = await markOverrideCharging(override);
+			break;
+		default:
+			break;
+	}
+
 	const base = decide({
 		minutesOfDay: clock.minutesOfDay,
 		snapshot,

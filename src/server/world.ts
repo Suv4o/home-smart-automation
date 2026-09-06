@@ -119,7 +119,15 @@ export class World {
 				: null,
 			charger,
 			chargeState: charge,
-			car: car ? { soc: car.soc, at: new Date(car.at).toISOString(), ageMs: Date.now() - car.at } : null,
+			car: car
+				? {
+						soc: car.soc,
+						at: new Date(car.at).toISOString(),
+						ageMs: Date.now() - car.at,
+						minutesToFull: car.minutesToFull,
+						chargeLimit: car.chargeLimit,
+					}
+				: null,
 			decision: decision
 				? {
 						action: decision.action,

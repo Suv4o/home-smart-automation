@@ -101,12 +101,20 @@ export function startServer(deps: ServerDeps, signal: AbortSignal): void {
 		const denied = requireToken(c.req.header("Authorization"));
 		if (denied) return c.json({ error: denied }, 401);
 
-		const body = (await c.req.json().catch(() => ({}))) as { mode?: string; hours?: number };
+		const body = (await c.req.json().catch(() => ({}))) as {
+			mode?: string;
+			hours?: number;
+			releaseWhenDone?: unknown;
+		};
 		if (body.mode !== "force_on" && body.mode !== "force_off") {
 			return c.json({ error: "mode must be force_on or force_off" }, 400);
 		}
 		const hours = typeof body.hours === "number" && body.hours > 0 && body.hours <= 12 ? body.hours : 2;
-		const override = await saveOverride(body.mode as OverrideMode, Date.now() + hours * 3_600_000);
+		const override = await saveOverride(
+			body.mode as OverrideMode,
+			Date.now() + hours * 3_600_000,
+			body.releaseWhenDone === true,
+		);
 
 		await deps.runTick(); // act immediately so the button feels instant
 		await world.publish();
