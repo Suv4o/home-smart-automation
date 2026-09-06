@@ -2,7 +2,8 @@ import { useEffect } from "react";
 import { useLiveState } from "./hooks/useLiveState.ts";
 import { useWakeLock } from "./hooks/useWakeLock.ts";
 import { HouseScene } from "./components/HouseScene.tsx";
-import { OverrideSheet } from "./components/OverrideSheet.tsx";
+import { ControlSheet } from "./components/controls/ControlSheet.tsx";
+import { HANDLE_PX } from "./components/controls/sheet.ts";
 import { StatStrip } from "./components/StatStrip.tsx";
 import { StatusBanner } from "./components/StatusBanner.tsx";
 import { skyPalette } from "./components/scene/palette.ts";
@@ -56,7 +57,11 @@ export default function App() {
 				<HouseScene state={state} />
 			</main>
 			<StatStrip state={state} />
-			<OverrideSheet state={state} onDone={() => undefined} />
+			{/* Reserves the strip of screen the collapsed handle occupies. The sheet
+			    itself is fixed, so opening it slides over the scene instead of
+			    shrinking it. */}
+			<div style={{ height: HANDLE_PX }} aria-hidden />
+			<ControlSheet state={state} onDone={() => undefined} />
 		</div>
 	);
 }
