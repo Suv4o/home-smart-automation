@@ -27,10 +27,12 @@ interface CacheEntry {
 	minutesToFull?: number | null;
 	/** The car's own charge limit, e.g. 80. */
 	chargeLimit?: number | null;
+	/** Last known lock state. Absent in caches written before this existed. */
+	locked?: boolean | null;
 }
 
-/** Everything we take from one `state charge` read. */
-export interface CarReading {
+/** What `state charge` alone gives us. */
+export interface ChargeReading {
 	soc: number;
 	/**
 	 * Minutes until the car reaches its own charge limit, as the car reports it -
@@ -39,6 +41,12 @@ export interface CarReading {
 	 */
 	minutesToFull: number | null;
 	chargeLimit: number | null;
+}
+
+/** One complete visit to the car: charge, plus the lock state read in the same wake. */
+export interface CarReading extends ChargeReading {
+	/** null when the car couldn't be asked - never assumed either way. */
+	locked: boolean | null;
 }
 
 export class TeslaReadError extends Error {}
@@ -100,11 +108,49 @@ export class TeslaCar {
 	 * so the display path must never call `soc()` - only the decision tick and
 	 * the explicit "check now" button are allowed to do that.
 	 */
-	async cachedSoc(): Promise<{ soc: number; at: number; minutesToFull: number | null; chargeLimit: number | null } | null> {
+	async cachedSoc(): Promise<{
+		soc: number;
+		at: number;
+		minutesToFull: number | null;
+		chargeLimit: number | null;
+		locked: boolean | null;
+	} | null> {
 		const c = await this.#readCache();
 		return c
-			? { soc: c.soc, at: c.at, minutesToFull: c.minutesToFull ?? null, chargeLimit: c.chargeLimit ?? null }
+			? {
+					soc: c.soc,
+					at: c.at,
+					minutesToFull: c.minutesToFull ?? null,
+					chargeLimit: c.chargeLimit ?? null,
+					locked: c.locked ?? null,
+				}
 			: null;
+	}
+
+	/**
+	 * Lock or unlock, then read back what the car actually did.
+	 *
+	 * Takes the state you want, not "toggle". Someone may have used the phone app
+	 * since the dashboard last looked, so a toggle computed from a stale reading
+	 * could do the opposite of what the button offered. Asking for an end state is
+	 * idempotent: locking an already-locked car is a no-op, and either way the
+	 * read-back corrects the display rather than leaving it wrong.
+	 */
+	async setLocked(locked: boolean): Promise<boolean | null> {
+		await this.#invoke(["-ble", locked ? "lock" : "unlock"]);
+		const actual = await this.#tryReadLocked();
+		await this.#patchCache({ locked: actual });
+		if (actual !== null && actual !== locked) {
+			logger.warn({ wanted: locked, actual }, "car did not end up in the requested lock state");
+		}
+		return actual;
+	}
+
+	/** Re-read just the lock state, without disturbing the cached battery reading. */
+	async refreshLocked(): Promise<boolean | null> {
+		const locked = await this.#tryReadLocked();
+		await this.#patchCache({ locked });
+		return locked;
 	}
 
 	/**
@@ -148,7 +194,28 @@ export class TeslaCar {
 		}
 	}
 
+	/**
+	 * One visit to the car. The battery is what we came for; the lock state is
+	 * read in the same wake because the car is already awake and asking again
+	 * later would cost another one - which is the whole reason the lock state on
+	 * the dashboard can be trusted at all.
+	 */
 	async #readFresh(): Promise<CarReading> {
+		const charge = await this.#readCharge();
+		return { ...charge, locked: await this.#tryReadLocked() };
+	}
+
+	/** Best-effort: a car that won't report its locks must not fail the reading. */
+	async #tryReadLocked(): Promise<boolean | null> {
+		try {
+			return parseLocked(await this.#invoke(["-ble", "state", "closures"]));
+		} catch (err) {
+			logger.warn({ err: String(err) }, "could not read lock state");
+			return null;
+		}
+	}
+
+	async #readCharge(): Promise<ChargeReading> {
 		let lastErr: unknown;
 		for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
 			try {
@@ -178,6 +245,14 @@ export class TeslaCar {
 		} catch {
 			return null;
 		}
+	}
+
+	/** Update part of the cache, leaving the reading's timestamp and the rest alone. */
+	async #patchCache(patch: Partial<CacheEntry>): Promise<void> {
+		const current = await this.#readCache();
+		if (!current) return; // nothing to attach it to; the next full read will carry it
+		await mkdir(dirname(CACHE_FILE), { recursive: true, mode: 0o700 });
+		await writeFile(CACHE_FILE, JSON.stringify({ ...current, ...patch }), { mode: 0o600 });
 	}
 
 	async #writeCache(reading: CarReading): Promise<void> {
@@ -226,7 +301,7 @@ function chargeObject(stdout: string): Record<string, unknown> {
  * is charging, and not every firmware exposes it, so its absence degrades the
  * display rather than failing the read.
  */
-export function parseCharge(stdout: string): CarReading {
+export function parseCharge(stdout: string): ChargeReading {
 	const charge = chargeObject(stdout);
 
 	const soc = pick(charge, ["usableBatteryLevel", "batteryLevel"]);
@@ -284,6 +359,37 @@ export function redactLocation(stdout: string): string {
 		return v;
 	};
 	return JSON.stringify(scrub(json), null, 2);
+}
+
+/**
+ * Whether the car is locked, from `state closures`.
+ *
+ * Returns null rather than guessing when the car doesn't say. Assuming "locked"
+ * would put a reassuring padlock on the screen with nothing behind it; assuming
+ * "unlocked" would nag about a car that is probably fine. Unknown is a state the
+ * UI is built to show.
+ */
+export function parseLocked(stdout: string): boolean | null {
+	const start = stdout.indexOf("{");
+	const end = stdout.lastIndexOf("}");
+	if (start === -1 || end <= start) return null;
+	let json: unknown;
+	try {
+		json = JSON.parse(stdout.slice(start, end + 1));
+	} catch {
+		return null;
+	}
+	const root = json as Record<string, unknown>;
+	const state = (root["closuresState"] ?? root["vehicleState"] ?? root) as Record<string, unknown>;
+
+	if (typeof state["locked"] === "boolean") return state["locked"];
+	// Some firmware reports an enum instead of a flag.
+	const enumish = state["vehicleLockState"];
+	if (typeof enumish === "string") {
+		if (/unlocked/i.test(enumish)) return false;
+		if (/locked/i.test(enumish)) return true;
+	}
+	return null;
 }
 
 /** The battery percentage alone. */

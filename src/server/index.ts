@@ -131,6 +131,29 @@ export function startServer(deps: ServerDeps, signal: AbortSignal): void {
 		return c.json({ ok: true });
 	});
 
+	/**
+	 * Lock or unlock. Takes the state you want rather than "toggle", so a stale
+	 * dashboard can never send the opposite of what its button offered.
+	 */
+	app.post("/api/car/lock", async (c) => {
+		const denied = requireToken(c.req.header("Authorization"));
+		if (denied) return c.json({ error: denied }, 401);
+
+		const body = (await c.req.json().catch(() => ({}))) as { locked?: unknown };
+		if (typeof body.locked !== "boolean") {
+			return c.json({ error: "locked must be true or false" }, 400);
+		}
+		logger.info({ locked: body.locked }, body.locked ? "locking the car" : "unlocking the car");
+		try {
+			const actual = await car.setLocked(body.locked);
+			await world.publish();
+			return c.json({ locked: actual });
+		} catch (err) {
+			await world.publish();
+			return c.json({ error: err instanceof Error ? err.message : String(err) }, 502);
+		}
+	});
+
 	let lastCarRefresh = 0;
 	app.post("/api/car/refresh", async (c) => {
 		const denied = requireToken(c.req.header("Authorization"));

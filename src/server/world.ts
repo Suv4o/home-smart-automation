@@ -126,6 +126,7 @@ export class World {
 						ageMs: Date.now() - car.at,
 						minutesToFull: car.minutesToFull,
 						chargeLimit: car.chargeLimit,
+						locked: car.locked,
 					}
 				: null,
 			decision: decision

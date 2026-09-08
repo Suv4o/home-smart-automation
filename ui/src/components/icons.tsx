@@ -117,3 +117,28 @@ export const AlertIcon = ({ size = 30 }: Props) => (
 		<path d="M12 10.2v4.2M12 17.6h.01" />
 	</svg>
 );
+
+/** Shackle down and closed: the car is locked. */
+export const LockedIcon = ({ size = 24 }: Props) => (
+	<svg {...BASE} width={size} height={size}>
+		<rect x="4.5" y="10.5" width="15" height="10.5" rx="2.4" />
+		<path d="M8 10.5V7.2a4 4 0 0 1 8 0v3.3" />
+	</svg>
+);
+
+/** Shackle sprung open: the car is unlocked. */
+export const UnlockedIcon = ({ size = 24 }: Props) => (
+	<svg {...BASE} width={size} height={size}>
+		<rect x="4.5" y="10.5" width="15" height="10.5" rx="2.4" />
+		<path d="M8 10.5V7.2a4 4 0 0 1 7.6-1.7" />
+	</svg>
+);
+
+/** A padlock with a question mark: we have not been told either way. */
+export const LockUnknownIcon = ({ size = 24 }: Props) => (
+	<svg {...BASE} width={size} height={size}>
+		<rect x="4.5" y="10.5" width="15" height="10.5" rx="2.4" />
+		<path d="M8 10.5V7.2a4 4 0 0 1 8 0v3.3" />
+		<path d="M10.6 14.6a1.5 1.5 0 1 1 1.9 1.6v.9M12 18.9h.01" />
+	</svg>
+);

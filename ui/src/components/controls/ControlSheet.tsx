@@ -1,6 +1,6 @@
 import { type ReactNode, useRef, useState } from "react";
 import type { DashboardState } from "../../lib/types.ts";
-import { AutoIcon, BoltIcon, CarIcon, PauseIcon } from "../icons.tsx";
+import { AutoIcon, BoltIcon, CarIcon, LockedIcon, LockUnknownIcon, PauseIcon, UnlockedIcon } from "../icons.tsx";
 import { Dialog } from "./Dialog.tsx";
 import {
 	clampHours,
@@ -54,6 +54,7 @@ async function send(path: string, method: string, body: unknown, token: string):
  * a charge and so on are expected to land here later.
  */
 export function ControlSheet({ state, onDone }: { state: DashboardState; onDone: () => void }) {
+	const locked = state.car?.locked ?? null;
 	const [stage, setStage] = useState<Stage>("closed");
 	const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? "");
 	const [busy, setBusy] = useState(false);
@@ -63,6 +64,7 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 	const [hours, setHours] = useState(HOURS_DEFAULT);
 	const [releaseWhenDone, setReleaseWhenDone] = useState(false);
 	const [askCar, setAskCar] = useState(false);
+	const [askUnlock, setAskUnlock] = useState(false);
 	const [pinOpen, setPinOpen] = useState(false);
 	const [pin, setPin] = useState("");
 	const pending = useRef<((token: string) => Promise<void>) | null>(null);
@@ -187,6 +189,23 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 					</Section>
 
 					<Section title="Car">
+						{/*
+						 * One button for both directions. It shows the state we were last
+						 * told and asks for the opposite - and because the request names
+						 * the end state rather than "toggle", a reading that has gone
+						 * stale behind our back cannot make it do the wrong thing.
+						 */}
+						<Tile
+							icon={locked === null ? <LockUnknownIcon /> : locked ? <LockedIcon /> : <UnlockedIcon />}
+							label={locked === false ? "Lock" : locked ? "Unlock" : "Lock"}
+							hint={locked === null ? "lock state unknown" : locked ? "car is locked" : "car is unlocked"}
+							onClick={() => {
+								// Locking is harmless; unlocking a car from a wall tablet
+								// deserves a deliberate second tap.
+								if (locked === true) setAskUnlock(true);
+								else act("/api/car/lock", "POST", { locked: true });
+							}}
+						/>
 						<Tile icon={<CarIcon />} label="Check now" hint="wakes the car" onClick={() => setAskCar(true)} />
 					</Section>
 
@@ -241,6 +260,20 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 				onConfirm={() => {
 					setAskCar(false);
 					act("/api/car/refresh", "POST");
+				}}
+			/>
+
+			<Dialog
+				open={askUnlock}
+				title="Unlock the car?"
+				description="It will stay unlocked until you lock it again, or the car locks itself."
+				confirmLabel="Unlock"
+				tone="critical"
+				busy={busy}
+				onClose={() => setAskUnlock(false)}
+				onConfirm={() => {
+					setAskUnlock(false);
+					act("/api/car/lock", "POST", { locked: false });
 				}}
 			/>
 

@@ -24,7 +24,8 @@ home-smart-automation
   seed <refresh-token>           Seed Solarman auth from a browser session's refresh token
   snapshot [--json] [--raw]      Print one reading of the system
   charger <status|on|off>        Read or switch the Tapo plug directly
-  car soc [--raw]                Read the car battery % (wakes the car; uses cache)
+  car soc [--raw]                Read the car battery % and lock state (wakes the car)
+  car lock | car unlock          Lock or unlock the car, then read back what it did
                                  --raw prints the car's whole charge state as JSON
 
 In CI, secrets are set as env vars. Locally, prefix with: node --env-file=.env src/cli.ts <command>
@@ -114,11 +115,18 @@ async function main(): Promise<number> {
 		}
 
 		case "car": {
-			if ((positionals[1] ?? "soc") !== "soc") {
-				console.error(`Unknown car subcommand: ${positionals[1]}`);
+			const sub = positionals[1] ?? "soc";
+			if (sub !== "soc" && sub !== "lock" && sub !== "unlock") {
+				console.error(`Unknown car subcommand: ${sub}`);
 				return 1;
 			}
 			const car = new TeslaCar(config.car.controlCmd, config.car.socTtlMs);
+
+			if (sub === "lock" || sub === "unlock") {
+				const actual = await car.setLocked(sub === "lock");
+				console.log(`  car is now ${actual === null ? "in an unknown lock state" : actual ? "locked" : "unlocked"}`);
+				return actual === null ? 1 : 0;
+			}
 
 			// --raw dumps what the car actually sent, which is the way to check
 			// whether this firmware reports a remaining-charge time at all.
@@ -143,6 +151,7 @@ async function main(): Promise<number> {
 			} else {
 				console.log("  time to full  not reported (expected unless the car is charging)");
 			}
+			console.log(`  locked        ${cached?.locked === null || cached?.locked === undefined ? "unknown" : cached.locked ? "yes" : "no"}`);
 			return 0;
 		}
 

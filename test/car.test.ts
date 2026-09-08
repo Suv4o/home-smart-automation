@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { parseCharge, parseSoc, redactLocation } from "../src/car/tesla.ts";
+import { parseCharge, parseLocked, parseSoc, redactLocation } from "../src/car/tesla.ts";
 import type { ChargerState } from "../src/charger/types.ts";
 import type { PolicyConfig } from "../src/config.ts";
 import { applyCarSocGate, type CarSoc, type Decision } from "../src/engine/policy.ts";
@@ -167,5 +167,41 @@ describe("redactLocation", () => {
 
 	it("hands back anything it cannot parse rather than swallowing it", () => {
 		assert.equal(redactLocation("tesla-control: connection failed"), "tesla-control: connection failed");
+	});
+});
+
+/**
+ * Lock state is read from `state closures`, alongside the battery in the same
+ * wake. It is never guessed: the dashboard shows "unknown" rather than putting a
+ * reassuring padlock on screen with nothing behind it.
+ */
+describe("parseLocked", () => {
+	it("reads the flag the car sends", () => {
+		assert.equal(parseLocked('{"closuresState":{"locked":true}}'), true);
+		assert.equal(parseLocked('{"closuresState":{"locked":false}}'), false);
+	});
+
+	it("tolerates the state arriving under another key", () => {
+		assert.equal(parseLocked('{"vehicleState":{"locked":true}}'), true);
+		assert.equal(parseLocked('{"locked":false}'), false);
+	});
+
+	it("understands an enum instead of a flag", () => {
+		assert.equal(parseLocked('{"closuresState":{"vehicleLockState":"Unlocked"}}'), false);
+		assert.equal(parseLocked('{"closuresState":{"vehicleLockState":"Locked"}}'), true);
+	});
+
+	it("says unknown rather than guessing, and never throws", () => {
+		// Every one of these is a real possibility: an older firmware, a failed
+		// command, a car that answered with something else entirely.
+		assert.equal(parseLocked('{"closuresState":{"doorOpen":false}}'), null);
+		assert.equal(parseLocked("tesla-control: context deadline exceeded"), null);
+		assert.equal(parseLocked(""), null);
+		assert.equal(parseLocked("{not json"), null);
+		assert.equal(parseLocked('{"closuresState":{"locked":"yes"}}'), null);
+	});
+
+	it("ignores log noise around the JSON", () => {
+		assert.equal(parseLocked('connecting…\n{"closuresState":{"locked":true}}\ndone'), true);
 	});
 });

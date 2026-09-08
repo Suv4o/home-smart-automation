@@ -37,6 +37,8 @@ export interface DashboardState {
 		 */
 		minutesToFull: number | null;
 		chargeLimit: number | null;
+		/** null when the car has never told us - the UI shows that, never a guess. */
+		locked: boolean | null;
 	} | null;
 	readonly decision: { action: Action; window: Window; reason: string; source: "policy" | "override" } | null;
 	readonly override: Override | null;
