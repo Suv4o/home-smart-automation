@@ -1,9 +1,10 @@
-import { type ReactNode, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import type { DashboardState } from "../../lib/types.ts";
 import { AutoIcon, BoltIcon, CarIcon, LockedIcon, LockUnknownIcon, PauseIcon, UnlockedIcon } from "../icons.tsx";
 import { Dialog } from "./Dialog.tsx";
 import {
 	clampHours,
+	HALF_VH,
 	HANDLE_PX,
 	HOURS_DEFAULT,
 	HOURS_MAX,
@@ -17,7 +18,36 @@ import {
 } from "./sheet.ts";
 
 const TOKEN_KEY = "dashboard-token";
+const CAR_HINT = "Reaching the car over Bluetooth. If it is asleep this can take up to a minute.";
+const PLUG_HINT = "Reading the meter and switching the plug.";
 type Mode = "force_on" | "force_off";
+
+/**
+ * An action and the words to describe it while it runs.
+ *
+ * The copy is part of the action rather than the button, because the wait is
+ * where it is needed: a car command can take a minute and a half (a 30s BLE
+ * timeout, three attempts, plus wake settles), and the override endpoint runs a
+ * whole decision tick before it answers. A bare spinner for that long looks like
+ * a hang.
+ */
+interface Action {
+	path: string;
+	method: string;
+	body?: unknown;
+	/** Present tense, shown while it runs: "Unlocking the car". */
+	label: string;
+	/** Shown on success: "Car unlocked". */
+	done: string;
+	/** Why this one might take a while. Shown once the wait gets noticeable. */
+	hint?: string;
+	/** Drop back to the dashboard afterwards, when the result shows there. */
+	closeOnSuccess?: boolean;
+}
+
+interface Job extends Action {
+	startedAt: number;
+}
 
 interface Sent {
 	ok: boolean;
@@ -25,18 +55,35 @@ interface Sent {
 	message: string;
 }
 
+/**
+ * Longer than the slowest thing the daemon can legitimately do: a car command is
+ * a 30s Bluetooth timeout times three attempts, plus wake settles. The point is
+ * not to cut work short but to guarantee the request always settles - without
+ * it, a dropped Wi-Fi link would leave the progress overlay spinning forever
+ * with no way past it.
+ */
+const REQUEST_TIMEOUT_MS = 120_000;
+
 async function send(path: string, method: string, body: unknown, token: string): Promise<Sent> {
+	const abort = new AbortController();
+	const timer = window.setTimeout(() => abort.abort(), REQUEST_TIMEOUT_MS);
 	try {
 		const res = await fetch(path, {
 			method,
 			headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
 			body: body ? JSON.stringify(body) : undefined,
+			signal: abort.signal,
 		});
 		if (res.ok) return { ok: true, status: res.status, message: "" };
 		const j = (await res.json().catch(() => ({}))) as { error?: string };
 		return { ok: false, status: res.status, message: j.error ?? `HTTP ${res.status}` };
 	} catch (e) {
+		if (e instanceof DOMException && e.name === "AbortError") {
+			return { ok: false, status: 0, message: "Gave up waiting for the daemon to answer." };
+		}
 		return { ok: false, status: 0, message: e instanceof Error ? e.message : String(e) };
+	} finally {
+		window.clearTimeout(timer);
 	}
 }
 
@@ -59,6 +106,8 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 	const [token, setToken] = useState(() => localStorage.getItem(TOKEN_KEY) ?? "");
 	const [busy, setBusy] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [job, setJob] = useState<Job | null>(null);
+	const [outcome, setOutcome] = useState<{ ok: boolean; text: string } | null>(null);
 
 	const [hoursFor, setHoursFor] = useState<Mode | null>(null);
 	const [hours, setHours] = useState(HOURS_DEFAULT);
@@ -70,20 +119,31 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 	const pending = useRef<((token: string) => Promise<void>) | null>(null);
 	const dragFrom = useRef<number | null>(null);
 
-	const perform = async (path: string, method: string, body: unknown, tok: string): Promise<void> => {
+	const perform = async (action: Action, tok: string): Promise<void> => {
 		setBusy(true);
 		setError(null);
-		const res = await send(path, method, body, tok);
+		setOutcome(null);
+		setJob({ ...action, startedAt: Date.now() });
+
+		const res = await send(action.path, action.method, action.body, tok);
+
 		setBusy(false);
+		setJob(null);
 
 		if (res.ok) {
 			localStorage.setItem(TOKEN_KEY, tok);
 			setToken(tok);
 			setPinOpen(false);
 			setPin("");
-			// Close up, so the change is visible on the dashboard behind.
-			setStage("closed");
+			setOutcome({ ok: true, text: action.done });
 			onDone();
+			// Let the confirmation land before anything moves. Actions whose result
+			// is visible on the dashboard then get out of the way; ones you read in
+			// the sheet itself - the padlock - stay put so you can see them flip.
+			window.setTimeout(() => {
+				setOutcome(null);
+				if (action.closeOnSuccess) setStage("closed");
+			}, 1100);
 			return;
 		}
 		if (res.status === 401) {
@@ -91,25 +151,25 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 			// rather than failing silently on every later tap.
 			localStorage.removeItem(TOKEN_KEY);
 			setToken("");
-			pending.current = (t) => perform(path, method, body, t);
+			pending.current = (t) => perform(action, t);
 			setPin("");
 			setPinOpen(true);
 			setError("That PIN wasn't accepted.");
 			return;
 		}
-		setError(res.message);
+		setOutcome({ ok: false, text: res.message });
 	};
 
 	/** Run an action, collecting the PIN first if we don't have one yet. */
-	const act = (path: string, method: string, body?: unknown): void => {
+	const act = (action: Action): void => {
 		setError(null);
 		if (!token) {
-			pending.current = (t) => perform(path, method, body, t);
+			pending.current = (t) => perform(action, t);
 			setPin("");
 			setPinOpen(true);
 			return;
 		}
-		void perform(path, method, body, token);
+		void perform(action, token);
 	};
 
 	const move = (dir: "up" | "down"): void => setStage((s) => nextStage(s, dir));
@@ -162,6 +222,8 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 					<Chevron pointsDown={stage === "full"} />
 				</button>
 
+				<Progress job={job} outcome={outcome} stage={stage} onDismiss={() => setOutcome(null)} />
+
 				<div className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto px-5 pb-8" style={{ overscrollBehavior: "contain" }}>
 					<Section title="Charging">
 						<Tile
@@ -188,7 +250,16 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 							label="Automatic"
 							hint={state.override ? "cancel the override" : "already automatic"}
 							disabled={!state.override}
-							onClick={() => act("/api/override", "DELETE")}
+							onClick={() =>
+								act({
+									path: "/api/override",
+									method: "DELETE",
+									label: "Handing back to the schedule",
+									done: "Back to automatic",
+									hint: PLUG_HINT,
+									closeOnSuccess: true,
+								})
+							}
 						/>
 					</Section>
 
@@ -207,7 +278,15 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 								// Locking is harmless; unlocking a car from a wall tablet
 								// deserves a deliberate second tap.
 								if (locked === true) setAskUnlock(true);
-								else act("/api/car/lock", "POST", { locked: true });
+								else
+									act({
+										path: "/api/car/lock",
+										method: "POST",
+										body: { locked: true },
+										label: "Locking the car",
+										done: "Car locked",
+										hint: CAR_HINT,
+									});
 							}}
 						/>
 						<Tile icon={<CarIcon />} label="Check now" hint="wakes the car" onClick={() => setAskCar(true)} />
@@ -234,11 +313,20 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 					const mode = hoursFor;
 					setHoursFor(null);
 					if (mode) {
-						act("/api/override", "POST", {
-							mode,
-							hours: clampHours(hours),
-							// Only meaningful when charging; a pause has nothing to finish.
-							releaseWhenDone: mode === "force_on" && releaseWhenDone,
+						const charging = mode === "force_on";
+						act({
+							path: "/api/override",
+							method: "POST",
+							body: {
+								mode,
+								hours: clampHours(hours),
+								// Only meaningful when charging; a pause has nothing to finish.
+								releaseWhenDone: charging && releaseWhenDone,
+							},
+							label: charging ? "Starting the charge" : "Pausing charging",
+							done: charging ? `Charging for ${hoursLabel(hours)}` : `Paused for ${hoursLabel(hours)}`,
+							hint: PLUG_HINT,
+							closeOnSuccess: true,
 						});
 					}
 				}}
@@ -263,7 +351,13 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 				onClose={() => setAskCar(false)}
 				onConfirm={() => {
 					setAskCar(false);
-					act("/api/car/refresh", "POST");
+					act({
+						path: "/api/car/refresh",
+						method: "POST",
+						label: "Waking the car",
+						done: "Car reading updated",
+						hint: CAR_HINT,
+					});
 				}}
 			/>
 
@@ -277,7 +371,14 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 				onClose={() => setAskUnlock(false)}
 				onConfirm={() => {
 					setAskUnlock(false);
-					act("/api/car/lock", "POST", { locked: false });
+					act({
+						path: "/api/car/lock",
+						method: "POST",
+						body: { locked: false },
+						label: "Unlocking the car",
+						done: "Car unlocked",
+						hint: CAR_HINT,
+					});
 				}}
 			/>
 
@@ -331,6 +432,112 @@ function HoursSlider({ hours, onChange }: { hours: number; onChange: (h: number)
 				<span>{HOURS_MAX}h</span>
 			</div>
 		</div>
+	);
+}
+
+/**
+ * What the sheet shows while an action is in flight, and just after.
+ *
+ * It covers the controls deliberately. Beyond telling you something is
+ * happening, it stops a second command being fired into a Bluetooth link that is
+ * still busy with the first - the tiles used to stay live throughout, so two
+ * overlapping car commands were a tap away.
+ *
+ * The seconds counter matters more than the spinner: these waits are long enough
+ * that a spinner alone reads as a hang, and a number that keeps moving is proof
+ * the thing is alive. The explanation only appears once the wait is long enough
+ * to need one, so quick actions stay quiet.
+ */
+function Progress({
+	job,
+	outcome,
+	stage,
+	onDismiss,
+}: {
+	job: Job | null;
+	outcome: { ok: boolean; text: string } | null;
+	stage: Stage;
+	onDismiss: () => void;
+}) {
+	const [elapsed, setElapsed] = useState(0);
+
+	useEffect(() => {
+		if (!job) return;
+		setElapsed(0);
+		const id = window.setInterval(() => setElapsed(Math.floor((Date.now() - job.startedAt) / 1000)), 250);
+		return () => window.clearInterval(id);
+	}, [job]);
+
+	if (!job && !outcome) return null;
+
+	return (
+		<div
+			className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-4 bg-surface/95 px-8 text-center"
+			role="status"
+			aria-live="polite"
+			// The panel is taller than the screen when only half open, so centring on
+			// the panel would push this below the fold. Pad out the hidden part and
+			// it centres on what you can actually see, at either height.
+			style={{
+				touchAction: "none",
+				paddingBottom: stage === "half" ? `${PANEL_VH - HALF_VH}vh` : undefined,
+			}}
+		>
+			{job && (
+				<>
+					<Spinner />
+					<p className="text-2xl font-semibold text-ink">{job.label}…</p>
+					{/* Only start counting once it is slow enough to be worth saying. */}
+					{elapsed >= 2 && <p className="text-lg tabular-nums text-muted">{elapsed}s</p>}
+					{job.hint && elapsed >= 5 && <p className="max-w-sm text-base leading-snug text-ink-dim">{job.hint}</p>}
+				</>
+			)}
+
+			{outcome && (
+				<>
+					<Verdict ok={outcome.ok} />
+					<p className={`text-2xl font-semibold ${outcome.ok ? "text-good" : "text-critical"}`}>{outcome.text}</p>
+					{!outcome.ok && (
+						<button
+							type="button"
+							onClick={onDismiss}
+							className="mt-2 rounded-2xl bg-page px-6 py-3 text-lg font-semibold text-ink active:bg-hairline"
+						>
+							Close
+						</button>
+					)}
+				</>
+			)}
+		</div>
+	);
+}
+
+function Spinner() {
+	return (
+		<svg width="46" height="46" viewBox="0 0 24 24" fill="none" className="animate-spin text-good" aria-hidden>
+			<circle cx="12" cy="12" r="9.5" stroke="currentColor" strokeWidth="2.5" opacity="0.2" />
+			<path d="M21.5 12A9.5 9.5 0 0 0 12 2.5" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" />
+		</svg>
+	);
+}
+
+function Verdict({ ok }: { ok: boolean }) {
+	return (
+		<svg
+			width="46"
+			height="46"
+			viewBox="0 0 24 24"
+			fill="none"
+			stroke="currentColor"
+			strokeWidth="2.2"
+			strokeLinecap="round"
+			strokeLinejoin="round"
+			className={ok ? "text-good" : "text-critical"}
+			aria-hidden
+		>
+			<circle cx="12" cy="12" r="9.5" />
+			{ok ? <path d="M7.8 12.4l2.9 2.9 5.5-5.9" /> : <path d="M12 7.5v5.2M12 16.4h.01" />}
+		</svg>
 	);
 }
 
