@@ -134,6 +134,7 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 				style={{
 					opacity: stage === "closed" ? 0 : 1,
 					pointerEvents: stage === "closed" ? "none" : "auto",
+					touchAction: "none",
 				}}
 			/>
 
@@ -144,8 +145,6 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 					transform: `translateY(${panelOffset(stage)})`,
 					transition: "transform 320ms cubic-bezier(0.22, 1, 0.36, 1)",
 				}}
-				onTouchStart={onTouchStart}
-				onTouchEnd={onTouchEnd}
 			>
 				<button
 					type="button"
@@ -153,12 +152,17 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 					aria-label={stage === "closed" ? "Open controls" : "Resize controls"}
 					aria-expanded={stage !== "closed"}
 					className="flex w-full shrink-0 items-center justify-center active:bg-hairline"
-					style={{ height: HANDLE_PX }}
+					// `touch-action: none` is what stops the page moving underneath. Without
+					// it the browser treats the same drag as a scroll and runs its own
+					// overscroll animation alongside ours, which is the shudder you see.
+					style={{ height: HANDLE_PX, touchAction: "none" }}
+					onTouchStart={onTouchStart}
+					onTouchEnd={onTouchEnd}
 				>
 					<Chevron pointsDown={stage === "full"} />
 				</button>
 
-				<div className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto px-5 pb-8">
+				<div className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto px-5 pb-8" style={{ overscrollBehavior: "contain" }}>
 					<Section title="Charging">
 						<Tile
 							icon={<BoltIcon />}

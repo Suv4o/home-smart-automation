@@ -65,6 +65,20 @@
 
 html, body, #root { height: 100%; }
 
+/*
+ * Kiosk behaviour: the page itself never scrolls or bounces.
+ *
+ * `overscroll-behavior` has to sit on the root as well as the body - overscroll
+ * chains upward from whatever is being scrolled, and stopping it at the body
+ * still lets it reach the viewport on Android, which is the pull-to-refresh and
+ * rubber-band effect. `overflow: hidden` then removes the document scroll
+ * entirely; every pane that needs to scroll does so inside itself.
+ */
+html {
+  overscroll-behavior: none;
+  overflow: hidden;
+}
+
 body {
   margin: 0;
   background: var(--color-page);
@@ -72,6 +86,12 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
+  overflow: hidden;
+  /* No grey flash on tap, and no text selection from a long press: both are
+     browser tells that make a full-screen dashboard feel like a web page. */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-user-select: none;
+  user-select: none;
   /*
    * Deliberately not transitioned. The tokens are already recomputed from the
    * sun's real position on every update, so they move gradually on their own; a
@@ -94,6 +114,24 @@ body {
 @keyframes trace-run {
   from { offset-distance: 0%; }
   to   { offset-distance: 100%; }
+}
+
+/*
+ * Taps register immediately. Without this the browser waits ~300ms to see
+ * whether a second tap is coming (double-tap to zoom), which reads as lag on
+ * every button.
+ */
+button,
+[role="button"],
+[role="checkbox"],
+a {
+  touch-action: manipulation;
+}
+
+/* Values the user can still select deliberately, despite the blanket rule above. */
+.selectable {
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* Dialog entrance. Transform and opacity only, so it composites. */
