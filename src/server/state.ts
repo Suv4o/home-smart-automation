@@ -45,7 +45,7 @@ export interface DashboardState {
 	/** Thresholds, so the UI can label what it's showing without hardcoding them. */
 	readonly limits: Pick<
 		PolicyConfig,
-		"mainSwitchLimitW" | "carPowerW" | "carMaxSoc" | "batteryBypassPct" | "solarCoverRatio" | "batteryStopPct"
+		"mainSwitchLimitW" | "carPowerW" | "carStartMaxSoc" | "batteryBypassPct" | "solarCoverRatio" | "batteryStopPct"
 	> & { morningStartMin: number; freeStartMin: number; freeEndMin: number };
 	/** Recent read failures, so a degraded state is visible rather than silent. */
 	readonly errors: string[];

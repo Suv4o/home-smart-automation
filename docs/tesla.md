@@ -1,6 +1,6 @@
 # Car battery via Tesla `tesla-control` (Bluetooth)
 
-The "don't charge above `CAR_MAX_SOC`" rule needs the car's battery %, which only
+The "don't start above `CAR_START_MAX_SOC`" rule needs the car's battery %, which only
 the car knows. We read it with Tesla's official
 [`tesla-control`](https://github.com/teslamotors/vehicle-command) CLI over
 Bluetooth — no cloud, no account. Setup (pairing the Mac as a key, generating the
@@ -21,7 +21,7 @@ keypair) is covered in the blog post; this doc is what the automation needs.
 
 | Var | Meaning |
 | --- | --- |
-| `CAR_MAX_SOC` | Don't charge at/above this % (default 80). |
+| `CAR_START_MAX_SOC` | Only *start* an automatic charge at or below this % (default 80). Once running, the car charges to its own limit. |
 | `CAR_SOC_TTL_MINUTES` | How long to trust one reading before waking the car again (default 60). |
 | `TESLA_CONTROL_CMD` | Binary name or path. `deploy/run-daemon.sh` puts `~/go/bin` on PATH, so plain `tesla-control` works. |
 | `TESLA_KEY_NAME`, `TESLA_VIN`, `TESLA_CACHE_FILE` | Read by `tesla-control` itself. **Must be in `.env`** — the launchd daemon does not load your shell profile. |

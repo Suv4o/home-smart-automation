@@ -141,7 +141,7 @@ export class World {
 			limits: {
 				mainSwitchLimitW: policy.mainSwitchLimitW,
 				carPowerW: policy.carPowerW,
-				carMaxSoc: policy.carMaxSoc,
+				carStartMaxSoc: policy.carStartMaxSoc,
 				batteryBypassPct: policy.batteryBypassPct,
 				solarCoverRatio: policy.solarCoverRatio,
 				batteryStopPct: policy.batteryStopPct,

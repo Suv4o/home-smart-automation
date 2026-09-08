@@ -5,26 +5,53 @@ import type { ChargerState } from "../src/charger/types.ts";
 import type { PolicyConfig } from "../src/config.ts";
 import { applyCarSocGate, type CarSoc, type Decision } from "../src/engine/policy.ts";
 
-const config = { carMaxSoc: 80, chargeIfCarUnknown: false } as PolicyConfig;
+const config = { carStartMaxSoc: 80, chargeIfCarUnknown: false } as PolicyConfig;
 const OFF: ChargerState = { on: false, powerW: 0 };
 const ON: ChargerState = { on: true, powerW: 2000 };
 const onBase: Decision = { action: "on", window: "free", reason: "free-power window" };
 const offBase: Decision = { action: "off", window: "solar", reason: "no sun" };
 
+/**
+ * The car gate decides whether to **start**, never when to stop.
+ *
+ * It used to be a ceiling: at 80% it switched the plug off, so a charge begun at
+ * 70% ended at 80% and the car never reached its own limit. The rule is now the
+ * one that was actually wanted - hold off while the car is already well charged,
+ * but once a session is running let it finish at whatever the car is set to.
+ */
 describe("applyCarSocGate", () => {
 	it("passes an 'off' base through untouched (never reads the car)", () => {
 		assert.equal(applyCarSocGate(offBase, null, OFF, config).action, "off");
 	});
 
-	it("charges when the car is below the max", () => {
+	it("starts when the car is at or below the start limit", () => {
 		const d = applyCarSocGate(onBase, { soc: 55, stale: false }, OFF, config);
 		assert.equal(d.action, "on");
 		assert.match(d.reason, /car 55%/);
+		// The boundary is inclusive: 80% still starts.
+		assert.equal(applyCarSocGate(onBase, { soc: 80, stale: false }, OFF, config).action, "on");
 	});
 
-	it("blocks when the car is at/above the max", () => {
-		assert.equal(applyCarSocGate(onBase, { soc: 80, stale: false }, OFF, config).action, "off");
-		assert.equal(applyCarSocGate(onBase, { soc: 92, stale: false }, ON, config).action, "off");
+	it("does not start when the car is already above it", () => {
+		const d = applyCarSocGate(onBase, { soc: 81, stale: false }, OFF, config);
+		assert.equal(d.action, "off");
+		assert.match(d.reason, /above the 80% start limit/);
+		assert.equal(applyCarSocGate(onBase, { soc: 92, stale: false }, OFF, config).action, "off");
+	});
+
+	it("never cuts short a charge already running, whatever the level", () => {
+		// This is the whole point: passing 80% mid-session must not stop the plug,
+		// so the car can go on to its own limit.
+		for (const soc of [79, 80, 81, 95, 99]) {
+			const d = applyCarSocGate(onBase, { soc, stale: false }, ON, config);
+			assert.equal(d.action, "on", `should keep charging at ${soc}%`);
+		}
+	});
+
+	it("lets a manual override start a charge at any level", () => {
+		const override: Decision = { ...onBase, source: "override" };
+		assert.equal(applyCarSocGate(override, { soc: 95, stale: false }, OFF, config).action, "on");
+		assert.equal(applyCarSocGate(override, { soc: 99, stale: false }, ON, config).action, "on");
 	});
 
 	it("notes when the reading came from a stale cache", () => {
@@ -38,7 +65,7 @@ describe("applyCarSocGate", () => {
 	});
 
 	it("charges when unreachable if CHARGE_IF_CAR_UNKNOWN is set", () => {
-		const permissive = { carMaxSoc: 80, chargeIfCarUnknown: true } as PolicyConfig;
+		const permissive = { carStartMaxSoc: 80, chargeIfCarUnknown: true } as PolicyConfig;
 		assert.equal(applyCarSocGate(onBase, null, OFF, permissive).action, "on");
 	});
 });

@@ -44,8 +44,10 @@ const Base = z.object({
 		MAIN_SWITCH_LIMIT_W: z.coerce.number().positive().default(10000),
 
 		// --- Car battery (Tesla, read over Bluetooth via tesla-control) ---
-		// Don't charge if the car is already at/above this.
-		CAR_MAX_SOC: z.coerce.number().min(0).max(100).default(80),
+		// A START gate, not a ceiling: automatic charging only begins when the car
+		// is at or below this. Once a session is under way it runs to the car's own
+		// charge limit, and a manual override ignores this entirely.
+		CAR_START_MAX_SOC: z.coerce.number().min(0).max(100).default(80),
 		// How long to trust one car reading before waking the car again. This is
 		// the idle figure: reading an asleep car wakes it, so it is deliberately
 		// slow.
@@ -118,8 +120,12 @@ export interface PolicyConfig {
 	readonly batteryBypassPct: number;
 	readonly carPowerW: number;
 	readonly mainSwitchLimitW: number;
-	/** Don't charge if the car battery is at/above this percent. */
-	readonly carMaxSoc: number;
+	/**
+	 * Automatic charging starts only when the car is at or below this percent.
+	 * It never stops a session already running - the car's own charge limit does
+	 * that - and a manual override ignores it entirely.
+	 */
+	readonly carStartMaxSoc: number;
 	/** When the car can't be read, charge anyway instead of holding. */
 	readonly chargeIfCarUnknown: boolean;
 }
@@ -179,7 +185,7 @@ export function loadConfig(): AppConfig {
 			batteryBypassPct: e.BATTERY_BYPASS_PCT,
 			carPowerW: e.CAR_POWER_W,
 			mainSwitchLimitW: e.MAIN_SWITCH_LIMIT_W,
-			carMaxSoc: e.CAR_MAX_SOC,
+			carStartMaxSoc: e.CAR_START_MAX_SOC,
 			chargeIfCarUnknown: e.CHARGE_IF_CAR_UNKNOWN,
 		},
 		ui: {

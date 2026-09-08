@@ -33,7 +33,7 @@ export interface DashboardState {
 	limits: {
 		mainSwitchLimitW: number;
 		carPowerW: number;
-		carMaxSoc: number;
+		carStartMaxSoc: number;
 		batteryBypassPct: number;
 		solarCoverRatio: number;
 		batteryStopPct: number;

@@ -42,7 +42,7 @@ climbs over the limit, it's switched off. E.g. 7 kW import + 2 kW car = 9 kW →
 allowed; 9 kW + 2 kW = 11 kW → blocked.
 
 **Car battery gate:** once every *other* rule says "charge", it checks the car's
-own battery and skips charging if it's already at/above `CAR_MAX_SOC` (default
+own battery and won't *start* a charge if it's already above `CAR_START_MAX_SOC` (default
 80 %). Reading the car (over Bluetooth via Tesla's `tesla-control`) wakes it, so
 the reading is cached for `CAR_SOC_TTL_MINUTES` (default 60) and the car is only
 read when a charge is otherwise warranted — never on blocked/overnight ticks. See

@@ -51,6 +51,9 @@ export function StatusBanner({ state, connection }: { state: DashboardState; con
 	const { headline, tone } = status;
 
 	const { limits: l } = state;
+	// force_off produces an "off" decision, which never reaches the SOC gate, so
+	// only a "charge now" actually suspends it.
+	const overriddenOn = state.override?.mode === "force_on";
 
 	return (
 		<header className="px-6 pt-5 pb-3">
@@ -96,7 +99,24 @@ export function StatusBanner({ state, connection }: { state: DashboardState; con
 					<Fact term="Grid limit" value={power(l.mainSwitchLimitW)} />
 					<Fact term="Car charger" value={power(l.carPowerW)} />
 					<Fact term="Solar rule" value={`needs ${Math.round(l.solarCoverRatio * 100)}% of house + car`} />
-					<Fact term="Stop car at" value={`${l.carMaxSoc}%`} />
+					{/*
+					  * A start threshold, not a ceiling - and a "charge now" override
+					  * ignores it. The old wording ("stop car at 80%") described a rule
+					  * that no longer exists, and during an override one that was
+					  * switched off anyway.
+					  */}
+					<Fact
+						term="Auto-start when car is"
+						value={
+							overriddenOn
+								? `${l.carStartMaxSoc}% or less · not while overriding`
+								: `${l.carStartMaxSoc}% or less`
+						}
+					/>
+					<Fact
+						term="Charges up to"
+						value={state.car?.chargeLimit != null ? `${state.car.chargeLimit}% (car's own limit)` : "the car's own limit"}
+					/>
 					<Fact term="House battery" value={`start above ${l.batteryBypassPct}% · floor ${l.batteryStopPct}%`} />
 				</dl>
 			</Dialog>

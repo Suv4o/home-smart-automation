@@ -58,7 +58,7 @@ describe(".env.example documents every setting", () => {
 			["CAR_SOC_TTL_MINUTES", "60"],
 			["CAR_SOC_TTL_CHARGING_MINUTES", "5"],
 			["CAR_DRAW_MIN_W", "500"],
-			["CAR_MAX_SOC", "80"],
+			["CAR_START_MAX_SOC", "80"],
 			["CAR_POWER_W", "2000"],
 			["MAIN_SWITCH_LIMIT_W", "10000"],
 			["BATTERY_START_PCT", "40"],

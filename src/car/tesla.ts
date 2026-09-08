@@ -312,7 +312,7 @@ export function parseCharge(stdout: string): ChargeReading {
 	// `minutesToChargeLimit` comes first deliberately. The car reports both, and
 	// they only agree when the charge limit is 100% - otherwise "to full" counts
 	// past the point the car will actually stop. The limit is what the Tesla app
-	// shows, and what our own CAR_MAX_SOC gate stops at.
+	// shows, and the level the car will actually stop at.
 	let minutesToFull = pick(charge, [
 		"minutesToChargeLimit",
 		"minutes_to_charge_limit",

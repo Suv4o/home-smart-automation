@@ -163,19 +163,29 @@ export interface CarSoc {
 /**
  * Final gate applied *after* the window/safety decision, using the car's own
  * battery level. Reading the car wakes it, so the caller only fetches this when
- * the base decision is already "on" — there's no point waking the car to confirm
+ * the base decision is already "on" - there's no point waking the car to confirm
  * a "no" we've already reached.
  *
+ * This decides whether to **start**, never when to stop. Once a session is
+ * running the car charges to its own limit, exactly as it would on any other
+ * charger; ending it is the car's job, not ours. So:
+ *
  *   base "off"                        -> off (car never read)
- *   car known, soc >= carMaxSoc       -> off (full enough)
- *   car known, soc <  carMaxSoc       -> on
+ *   manual override                   -> on (the owner's call outranks the gate)
+ *   plug already on                   -> on (a session in progress is not cut short)
+ *   car above carStartMaxSoc          -> off (topped up enough; don't begin)
+ *   car at or below it                -> on
  *   car unknown (unreachable)         -> hold the plug's current state; don't
  *                                        start a charge we can't justify, and
  *                                        don't interrupt one already running
+ *
+ * The plug's own on/off state carries the "session in progress" memory, the same
+ * way the morning window does - which is what makes a stateless tick able to
+ * tell "starting" from "continuing".
  */
 export function applyCarSocGate(base: Decision, carSoc: CarSoc | null, charger: ChargerState, config: PolicyConfig): Decision {
 	if (base.action === "off") return base;
-	// A manual "charge now" outranks the car's own 80% limit.
+	// A manual "charge now" outranks the start gate entirely.
 	if (base.source === "override") return base;
 
 	if (carSoc === null) {
@@ -188,14 +198,22 @@ export function applyCarSocGate(base: Decision, carSoc: CarSoc | null, charger: 
 			reason: "car battery unknown (couldn't reach the car) — holding current plug state",
 		};
 	}
-	if (carSoc.soc >= config.carMaxSoc) {
+	const tag = carSoc.stale ? " (cached)" : "";
+
+	// A charge already under way runs to the car's own limit. Re-applying the
+	// start threshold here would cut it off at that figure instead, which is the
+	// one thing this gate must not do.
+	if (charger.on) {
+		return { action: "on", window: base.window, reason: `${base.reason}; car ${carSoc.soc}%${tag}, charging on` };
+	}
+
+	if (carSoc.soc > config.carStartMaxSoc) {
 		return {
 			action: "off",
 			window: base.window,
-			reason: `car battery ${carSoc.soc}% ≥ ${config.carMaxSoc}% — no need to charge`,
+			reason: `car battery ${carSoc.soc}% above the ${config.carStartMaxSoc}% start limit — not starting a charge`,
 		};
 	}
-	const tag = carSoc.stale ? " (cached)" : "";
 	return { action: "on", window: base.window, reason: `${base.reason}; car ${carSoc.soc}%${tag}` };
 }
 

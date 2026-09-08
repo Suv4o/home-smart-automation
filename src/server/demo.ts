@@ -134,7 +134,7 @@ export function startDemo(config: AppConfig, store: StateStore, signal: AbortSig
 			limits: {
 				mainSwitchLimitW: config.policy.mainSwitchLimitW,
 				carPowerW: config.policy.carPowerW,
-				carMaxSoc: config.policy.carMaxSoc,
+				carStartMaxSoc: config.policy.carStartMaxSoc,
 				batteryBypassPct: config.policy.batteryBypassPct,
 				solarCoverRatio: config.policy.solarCoverRatio,
 				batteryStopPct: config.policy.batteryStopPct,

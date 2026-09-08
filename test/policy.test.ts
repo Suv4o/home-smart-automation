@@ -15,7 +15,7 @@ const config: PolicyConfig = {
 	batteryBypassPct: 80,
 	carPowerW: 2000,
 	mainSwitchLimitW: 10000,
-	carMaxSoc: 80,
+	carStartMaxSoc: 80,
 	chargeIfCarUnknown: false,
 };
 
