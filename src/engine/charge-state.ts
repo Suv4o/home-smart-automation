@@ -8,7 +8,40 @@ import type { ChargerState } from "../charger/types.ts";
  *            cable isn't in the car, or the car has finished
  *   charging the car is drawing real power
  */
-export type ChargeState = "off" | "waiting" | "charging";
+export type ChargeState = "off" | "waiting" | "charging" | "full";
+
+/**
+ * How close to its own limit counts as finished.
+ *
+ * The last reading before a car stops drawing is never exactly the limit - it is
+ * taken up to a poll interval earlier, so a car that finished at 100% was last
+ * seen at 99%. Charging at ~2kW gains about half a percent per five-minute poll,
+ * so three points is comfortable margin without swallowing a genuinely
+ * part-charged car.
+ */
+const FULL_TOLERANCE_PCT = 3;
+
+/** The last thing the car told us about itself. All fields may be unknown. */
+export interface CarView {
+	soc: number;
+	chargeLimit: number | null;
+	chargingState: string | null;
+}
+
+/**
+ * Has the car finished, as opposed to never having been connected?
+ *
+ * Its own word is taken first when it gives one. Otherwise the battery level
+ * against its charge limit decides: a car sitting at its limit has finished, and
+ * one well below it was never drawing in the first place.
+ */
+export function carIsFull(car: CarView | null): boolean {
+	if (!car) return false;
+	if (car.chargingState === "Complete") return true;
+	if (car.chargingState === "Disconnected" || car.chargingState === "NoPower") return false;
+	if (car.chargeLimit === null) return false;
+	return car.soc >= car.chargeLimit - FULL_TOLERANCE_PCT;
+}
 
 /**
  * A live plug is not the same thing as a charging car.
@@ -22,9 +55,14 @@ export type ChargeState = "off" | "waiting" | "charging";
  * This is also the trigger for reading the battery more often: a car that is
  * drawing power is awake, so polling it costs nothing extra.
  */
-export function chargeState(charger: ChargerState | null, minDrawW: number): ChargeState {
+export function chargeState(charger: ChargerState | null, minDrawW: number, car: CarView | null = null): ChargeState {
 	if (!charger || !charger.on) return "off";
-	return charger.powerW >= minDrawW ? "charging" : "waiting";
+	if (charger.powerW >= minDrawW) return "charging";
+	// A live socket with nothing drawing has two very different causes, and
+	// telling the user the wrong one is worse than saying nothing: a car that has
+	// finished was reported as "waiting to be plugged in" while sitting there
+	// plugged in and full.
+	return carIsFull(car) ? "full" : "waiting";
 }
 
 /** What the tick should do with an override, given what the car is doing. */
@@ -52,7 +90,8 @@ export function overrideAction(
 	if (!override || override.mode !== "force_on" || !override.releaseWhenDone) return "keep";
 	if (charge === "charging") return override.sawCharging ? "keep" : "mark-charging";
 	// "off" is the guard, not the car: only a live socket with nothing drawing
-	// from it means the car has stopped of its own accord.
-	if (charge === "waiting" && override.sawCharging) return "release";
+	// from it means the car has stopped of its own accord. "full" is the same
+	// event, just with the reason confirmed.
+	if ((charge === "waiting" || charge === "full") && override.sawCharging) return "release";
 	return "keep";
 }

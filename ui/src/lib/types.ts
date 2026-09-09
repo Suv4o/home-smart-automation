@@ -18,7 +18,7 @@ export interface DashboardState {
 	energy: { solarW: number; loadW: number; gridW: number; batteryW: number; batterySoc: number; at: string } | null;
 	charger: { on: boolean; powerW: number } | null;
 	/** "waiting" = plug live but nothing drawing, i.e. no cable in the car. */
-	chargeState: "off" | "waiting" | "charging";
+	chargeState: "off" | "waiting" | "charging" | "full";
 	car: {
 		soc: number;
 		at: string;
@@ -27,6 +27,7 @@ export interface DashboardState {
 		chargeLimit: number | null;
 		/** null = we have never been told; the UI says so rather than guessing. */
 		locked: boolean | null;
+		chargingState: string | null;
 	} | null;
 	decision: { action: Action; window: Window; reason: string; source: "policy" | "override" } | null;
 	override: { mode: "force_on" | "force_off"; until: number; setAt: number; releaseWhenDone?: boolean } | null;

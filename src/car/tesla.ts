@@ -29,6 +29,8 @@ interface CacheEntry {
 	chargeLimit?: number | null;
 	/** Last known lock state. Absent in caches written before this existed. */
 	locked?: boolean | null;
+	/** The car's own charging status at `at`. Absent in older caches. */
+	chargingState?: string | null;
 }
 
 /** What `state charge` alone gives us. */
@@ -41,6 +43,11 @@ export interface ChargeReading {
 	 */
 	minutesToFull: number | null;
 	chargeLimit: number | null;
+	/**
+	 * The car's own word for what it is doing: "Charging", "Complete",
+	 * "Disconnected", "Stopped", "NoPower". Null when it doesn't say.
+	 */
+	chargingState: string | null;
 }
 
 /** One complete visit to the car: charge, plus the lock state read in the same wake. */
@@ -114,6 +121,7 @@ export class TeslaCar {
 		minutesToFull: number | null;
 		chargeLimit: number | null;
 		locked: boolean | null;
+		chargingState: string | null;
 	} | null> {
 		const c = await this.#readCache();
 		return c
@@ -123,6 +131,7 @@ export class TeslaCar {
 					minutesToFull: c.minutesToFull ?? null,
 					chargeLimit: c.chargeLimit ?? null,
 					locked: c.locked ?? null,
+					chargingState: c.chargingState ?? null,
 				}
 			: null;
 	}
@@ -330,6 +339,7 @@ export function parseCharge(stdout: string): ChargeReading {
 		soc,
 		minutesToFull,
 		chargeLimit: pick(charge, ["chargeLimitSoc", "charge_limit_soc"]),
+		chargingState: pickChargingState(charge),
 	};
 }
 
@@ -359,6 +369,20 @@ export function redactLocation(stdout: string): string {
 		return v;
 	};
 	return JSON.stringify(scrub(json), null, 2);
+}
+
+/**
+ * The car's charging status, which protobuf JSON wraps as a one-key object -
+ * `{"Charging": {}}` - rather than a plain string. The key is the value.
+ */
+function pickChargingState(charge: Record<string, unknown>): string | null {
+	const v = charge["chargingState"] ?? charge["charging_state"];
+	if (typeof v === "string") return v;
+	if (v && typeof v === "object" && !Array.isArray(v)) {
+		const key = Object.keys(v as Record<string, unknown>)[0];
+		return key ?? null;
+	}
+	return null;
 }
 
 /**

@@ -178,7 +178,14 @@ async function runOnce(config: ReturnType<typeof loadConfig>, dryRun: boolean): 
 	// the decision - so the same tick that notices it is done also hands the plug
 	// back to the schedule.
 	let override = await loadOverride();
-	const charge = chargeState(chargerState, config.car.drawMinW);
+	// Cache only - the tick has not read the car yet at this point, and the point
+	// of this call is to settle the override, not to justify waking the vehicle.
+	const cachedCar = await new TeslaCar(config.car.controlCmd, config.car.socTtlMs).cachedSoc();
+	const charge = chargeState(
+		chargerState,
+		config.car.drawMinW,
+		cachedCar && { soc: cachedCar.soc, chargeLimit: cachedCar.chargeLimit, chargingState: cachedCar.chargingState },
+	);
 	switch (overrideAction(override, charge)) {
 		case "release":
 			await clearOverride();

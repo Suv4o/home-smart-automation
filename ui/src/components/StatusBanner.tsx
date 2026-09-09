@@ -36,11 +36,16 @@ export function StatusBanner({ state, connection }: { state: DashboardState; con
 	// With the plug live and no cable in the car this used to read "CHARGING",
 	// which was the most prominent wrong thing on the screen.
 	const waiting = charging && state.chargeState === "waiting";
+	// The plug is still live because an override or window says so, but the car
+	// has finished. Announcing that is very different from asking for a cable.
+	const full = charging && state.chargeState === "full";
 
 	const status = blocked
 		? { icon: <AlertIcon />, headline: "PAUSED — GRID TOO BUSY", tone: "text-critical" }
 		: waiting
 			? { icon: <PlugIcon />, headline: "WAITING FOR THE CAR", tone: "text-ink-dim" }
+			: full
+				? { icon: <BoltIcon size={30} />, headline: "CAR IS FULLY CHARGED", tone: "text-good" }
 			: charging
 				? {
 						icon: <BoltIcon size={30} />,
@@ -89,7 +94,9 @@ export function StatusBanner({ state, connection }: { state: DashboardState; con
 				<p className="text-lg leading-snug text-ink">
 					{waiting
 						? "The charger is on, but nothing is drawing from it — plug the cable into the car."
-						: (d?.reason ?? "No reading yet.")}
+						: full
+							? "The car has finished and stopped drawing. The charger stays on until the override or window ends."
+							: (d?.reason ?? "No reading yet.")}
 				</p>
 
 				{/* The thresholds the sentence above was measured against, so the

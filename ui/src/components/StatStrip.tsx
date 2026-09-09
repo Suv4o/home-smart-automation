@@ -94,6 +94,7 @@ function carNote(state: DashboardState, age: string | null, fresh: Freshness): s
 		const eta = state.car ? etaLabel(state.car.minutesToFull, state.car.ageMs) : null;
 		return eta ?? "charging";
 	}
+	if (state.chargeState === "full") return "fully charged";
 	if (state.chargeState === "waiting") return "not plugged in";
 	return fresh !== "fresh" && age ? age : undefined;
 }

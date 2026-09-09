@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { chargeState, overrideAction } from "../src/engine/charge-state.ts";
+import { carIsFull, chargeState, overrideAction } from "../src/engine/charge-state.ts";
 
 const MIN = 500;
 
@@ -83,5 +83,68 @@ describe("overrideAction", () => {
 		assert.equal(overrideAction(o, "off"), "keep", "guard must not end the override");
 		assert.equal(overrideAction(o, "charging"), "keep");
 		assert.equal(overrideAction(o, "waiting"), "release");
+	});
+});
+
+const LIVE = { on: true, powerW: 3 };
+const DRAWING = { on: true, powerW: 2050 };
+
+/**
+ * A live plug with nothing drawing has two causes that look identical at the
+ * socket: the cable was never plugged in, or the car finished and stopped. The
+ * dashboard used to assert the first, so a car sitting there fully charged was
+ * told to plug itself in.
+ */
+describe("full vs never-plugged-in", () => {
+	it("believes the car when it says it has finished", () => {
+		assert.equal(chargeState(LIVE, MIN, { soc: 99, chargeLimit: 100, chargingState: "Complete" }), "full");
+	});
+
+	it("believes the car when it says the cable is out", () => {
+		// Even at a level that would otherwise read as full.
+		assert.equal(chargeState(LIVE, MIN, { soc: 100, chargeLimit: 100, chargingState: "Disconnected" }), "waiting");
+	});
+
+	it("falls back to the level when the car gives no status", () => {
+		// The reported bug: last seen at 99% against a 100% limit, because the
+		// final poll landed before the car topped off.
+		assert.equal(chargeState(LIVE, MIN, { soc: 99, chargeLimit: 100, chargingState: null }), "full");
+		assert.equal(chargeState(LIVE, MIN, { soc: 78, chargeLimit: 80, chargingState: null }), "full");
+	});
+
+	it("still says waiting for a car nowhere near its limit", () => {
+		assert.equal(chargeState(LIVE, MIN, { soc: 52, chargeLimit: 80, chargingState: null }), "waiting");
+		assert.equal(chargeState(LIVE, MIN, { soc: 60, chargeLimit: 100, chargingState: null }), "waiting");
+	});
+
+	it("does not guess when it knows nothing about the car", () => {
+		assert.equal(chargeState(LIVE, MIN, null), "waiting");
+		assert.equal(chargeState(LIVE, MIN, { soc: 99, chargeLimit: null, chargingState: null }), "waiting");
+	});
+
+	it("never calls a drawing car full, whatever it last reported", () => {
+		assert.equal(chargeState(DRAWING, MIN, { soc: 99, chargeLimit: 100, chargingState: "Complete" }), "charging");
+	});
+
+	it("never calls a switched-off plug full", () => {
+		assert.equal(chargeState({ on: false, powerW: 0 }, MIN, { soc: 100, chargeLimit: 100, chargingState: "Complete" }), "off");
+	});
+
+	it("tolerates the gap between the last poll and the finish, but not more", () => {
+		assert.equal(carIsFull({ soc: 97, chargeLimit: 100, chargingState: null }), true);
+		assert.equal(carIsFull({ soc: 96, chargeLimit: 100, chargingState: null }), false);
+	});
+});
+
+/** Ending an override early must still fire now that "finished" has its own state. */
+describe("early release still triggers when the car fills up", () => {
+	it("releases on the confirmed-full state, not just the ambiguous one", () => {
+		const o = { mode: "force_on", releaseWhenDone: true, sawCharging: true } as const;
+		assert.equal(overrideAction(o, "full"), "release");
+		assert.equal(overrideAction(o, "waiting"), "release");
+	});
+
+	it("still ignores a car that never started", () => {
+		assert.equal(overrideAction({ mode: "force_on", releaseWhenDone: true }, "full"), "keep");
 	});
 });

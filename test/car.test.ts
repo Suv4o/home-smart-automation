@@ -99,12 +99,12 @@ describe("parseSoc", () => {
 describe("parseCharge", () => {
 	it("reads the remaining time alongside the battery level", () => {
 		const out = '{"chargeState":{"usableBatteryLevel":54,"minutesToFullCharge":96,"chargeLimitSoc":80}}';
-		assert.deepEqual(parseCharge(out), { soc: 54, minutesToFull: 96, chargeLimit: 80 });
+		assert.deepEqual(parseCharge(out), { soc: 54, minutesToFull: 96, chargeLimit: 80, chargingState: null });
 	});
 
 	it("accepts the snake_case spelling too", () => {
 		const out = '{"chargeState":{"batteryLevel":54,"minutes_to_full_charge":45,"charge_limit_soc":90}}';
-		assert.deepEqual(parseCharge(out), { soc: 54, minutesToFull: 45, chargeLimit: 90 });
+		assert.deepEqual(parseCharge(out), { soc: 54, minutesToFull: 45, chargeLimit: 90, chargingState: null });
 	});
 
 	it("converts the hours-based field when that is all the car sends", () => {
@@ -115,6 +115,13 @@ describe("parseCharge", () => {
 	it("prefers the minutes field over the hours one", () => {
 		const out = '{"chargeState":{"batteryLevel":54,"minutesToFullCharge":20,"timeToFullCharge":9}}';
 		assert.equal(parseCharge(out).minutesToFull, 20);
+	});
+
+	it("unwraps the charging status from its one-key object", () => {
+		assert.equal(parseCharge('{"chargeState":{"batteryLevel":90,"chargingState":{"Complete":{}}}}').chargingState, "Complete");
+		assert.equal(parseCharge('{"chargeState":{"batteryLevel":40,"chargingState":{"Disconnected":{}}}}').chargingState, "Disconnected");
+		// A plain string, should any firmware send one that way.
+		assert.equal(parseCharge('{"chargeState":{"batteryLevel":40,"chargingState":"Stopped"}}').chargingState, "Stopped");
 	});
 
 	it("still reads a car that reports no remaining time at all", () => {
@@ -160,7 +167,13 @@ const REAL_CHARGING = JSON.stringify({
 
 describe("parseCharge against a real car response", () => {
 	it("reads the whole reading from what the car actually sends", () => {
-		assert.deepEqual(parseCharge(REAL_CHARGING), { soc: 93, minutesToFull: 155, chargeLimit: 100 });
+		assert.deepEqual(parseCharge(REAL_CHARGING), {
+			soc: 93,
+			minutesToFull: 155,
+			chargeLimit: 100,
+			// Unwrapped from the protobuf one-key object the car really sends.
+			chargingState: "Charging",
+		});
 	});
 
 	it("prefers time-to-limit over time-to-full", () => {

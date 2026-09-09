@@ -97,7 +97,11 @@ export class World {
 		const clock = melbourneClock(now);
 		const { policy } = this.#config;
 
-		const charge = chargeState(charger, this.#config.car.drawMinW);
+		const charge = chargeState(
+			charger,
+			this.#config.car.drawMinW,
+			car && { soc: car.soc, chargeLimit: car.chargeLimit, chargingState: car.chargingState },
+		);
 
 		const decision =
 			snapshot && charger
@@ -127,6 +131,7 @@ export class World {
 						minutesToFull: car.minutesToFull,
 						chargeLimit: car.chargeLimit,
 						locked: car.locked,
+						chargingState: car.chargingState,
 					}
 				: null,
 			decision: decision
@@ -161,34 +166,6 @@ export class World {
 		return state;
 	}
 
-	/**
-	 * Keep the battery percentage fresh for as long as the car is drawing power.
-	 *
-	 * Reads immediately when a charge starts - that first figure is the one worth
-	 * having, since it anchors everything the driver watches afterwards - and then
-	 * at `socTtlChargingMs` while it continues.
-	 */
-	async #refreshCarWhileCharging(charge: ChargeState, cachedAt: number | null): Promise<void> {
-		if (charge !== "charging" || this.#carReadInFlight) return;
-
-		const justStarted = !this.#wasCharging;
-		const stale = cachedAt === null || Date.now() - cachedAt >= this.#config.car.socTtlChargingMs;
-		if (!justStarted && !stale) return;
-
-		this.#carReadInFlight = true;
-		try {
-			const reading = await this.#car.refresh();
-			if (reading) {
-				logger.info({ soc: reading.soc, trigger: justStarted ? "charge started" : "due" }, "car battery read while charging");
-				await this.publish(); // show the new figure without waiting for the next poll
-			}
-		} catch (err) {
-			this.#noteError("car", err);
-		} finally {
-			this.#carReadInFlight = false;
-		}
-	}
-
 	/** Build and publish, so every SSE client sees it. */
 	async publish(): Promise<DashboardState> {
 		const state = await this.buildState();
@@ -204,6 +181,47 @@ export class World {
 		tick();
 		const timer = setInterval(tick, this.#config.ui.refreshMs);
 		signal.addEventListener("abort", () => clearInterval(timer), { once: true });
+	}
+
+	/**
+	 * Read the car around the edges of a charge, and while one is running.
+	 *
+	 * Three moments matter. When a charge **starts** - that first figure anchors
+	 * everything the driver watches afterwards. **While it runs**, at
+	 * `socTtlChargingMs`, so the percentage climbs visibly. And when the draw
+	 * **stops** with the socket still live, because that is the one moment the
+	 * dashboard cannot interpret on its own: a car that has finished and a cable
+	 * that was never plugged in look identical at the plug. One read settles it,
+	 * and the car is certainly awake - it has just this moment stopped charging.
+	 */
+	async #refreshCarWhileCharging(charge: ChargeState, cachedAt: number | null): Promise<void> {
+		if (this.#carReadInFlight) return;
+
+		const charging = charge === "charging";
+		const justStarted = charging && !this.#wasCharging;
+		const dueWhileCharging =
+			charging && (cachedAt === null || Date.now() - cachedAt >= this.#config.car.socTtlChargingMs);
+		// Only when the plug is still live: a plug switched off is the guard acting,
+		// and waking the car to explain that would be a wake spent on nothing.
+		const justStopped = this.#wasCharging && (charge === "waiting" || charge === "full");
+
+		if (!justStarted && !dueWhileCharging && !justStopped) return;
+
+		this.#carReadInFlight = true;
+		try {
+			const reading = await this.#car.refresh();
+			if (reading) {
+				logger.info(
+					{ soc: reading.soc, trigger: justStopped ? "draw stopped" : justStarted ? "charge started" : "due" },
+					"car battery read",
+				);
+				await this.publish(); // show the new figure without waiting for the next poll
+			}
+		} catch (err) {
+			this.#noteError("car", err);
+		} finally {
+			this.#carReadInFlight = false;
+		}
 	}
 
 	#noteError(scope: string, err: unknown): void {

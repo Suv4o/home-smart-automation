@@ -42,6 +42,7 @@ export function HouseScene({ state }: { state: DashboardState }) {
 	// nothing on the end of it is "waiting", not a charge in progress.
 	const charging = state.chargeState === "charging";
 	const waitingForCar = state.chargeState === "waiting";
+	const carFull = state.chargeState === "full";
 	const carW = charging ? Math.max(charger?.powerW ?? 0, 0) || state.limits.carPowerW : 0;
 
 	const importing = gridW > 0;
@@ -49,7 +50,7 @@ export function HouseScene({ state }: { state: DashboardState }) {
 	const solarIntensity = Math.min(1, solarW / 4000);
 
 	const gridTone = blocked ? "critical" : importing ? "warning" : "good";
-	const carTone = blocked ? "critical" : charging ? "good" : waitingForCar ? "waiting" : "idle";
+	const carTone = blocked ? "critical" : charging ? "good" : waitingForCar || carFull ? "waiting" : "idle";
 
 	const solarLabel = anchor(LABEL_AT.solar);
 	const gridLabel = anchor(LABEL_AT.grid);
@@ -96,6 +97,7 @@ export function HouseScene({ state }: { state: DashboardState }) {
 				<Value x={battLabel.x} y={battLabel.y} text={power(batteryW)} colour={p.flowBattery} p={p} />
 			)}
 			{waitingForCar && <Note x={carAt.x} y={carAt.y + 46} text="waiting for the car to be plugged in" p={p} warn />}
+			{carFull && <Note x={carAt.x} y={carAt.y + 46} text="car is fully charged" p={p} tick />}
 		</svg>
 	);
 }
@@ -137,10 +139,18 @@ function Value({ x, y, text, colour, p }: { x: number; y: number; text: string; 
  * the lawn's edge line. Sitting it on the surface colour makes it legible over
  * whatever it happens to land on, in either palette.
  */
-function Note({ x, y, text, p, warn = false }: { x: number; y: number; text: string; p: Palette; warn?: boolean }) {
+function Note({
+	x,
+	y,
+	text,
+	p,
+	warn = false,
+	tick = false,
+}: { x: number; y: number; text: string; p: Palette; warn?: boolean; tick?: boolean }) {
+	const glyph = warn || tick;
 	const textW = text.length * 6.7;
-	const padL = warn ? 11 : 13;
-	const iconW = warn ? 13 + 6 : 0; // glyph plus the gap after it
+	const padL = glyph ? 11 : 13;
+	const iconW = glyph ? 13 + 6 : 0; // glyph plus the gap after it
 	const w = padL + iconW + textW + 13;
 	const left = -w / 2;
 
@@ -148,14 +158,30 @@ function Note({ x, y, text, p, warn = false }: { x: number; y: number; text: str
 		<g transform={`translate(${x} ${y})`}>
 			<rect x={left} y={-11} width={w} height={22} rx={11} fill={p.surface} stroke={p.hairline} strokeWidth={1} />
 
-			{warn && (
+			{glyph && (
 				// Drawn in place rather than reusing the shared icon set: those are
 				// sized for page chrome, and this has to sit on the scene's own
 				// coordinate grid so it scales with the illustration.
-				<g transform={`translate(${left + padL + 6.5} 0)`} stroke={p.flowWarning} strokeWidth={1.4} strokeLinecap="round" strokeLinejoin="round" fill="none">
-					<path d="M0,-5.4 L6,5 L-6,5 Z" />
-					<path d="M0,-1.8 v2.6" />
-					<path d="M0,3.3 h0.01" />
+				<g
+					transform={`translate(${left + padL + 6.5} 0)`}
+					stroke={warn ? p.flowWarning : p.flowGood}
+					strokeWidth={1.4}
+					strokeLinecap="round"
+					strokeLinejoin="round"
+					fill="none"
+				>
+					{warn ? (
+						<>
+							<path d="M0,-5.4 L6,5 L-6,5 Z" />
+							<path d="M0,-1.8 v2.6" />
+							<path d="M0,3.3 h0.01" />
+						</>
+					) : (
+						<>
+							<circle r={5.6} />
+							<path d="M-2.6,0.2 L-0.6,2.3 L3,-2.2" />
+						</>
+					)}
 				</g>
 			)}
 
