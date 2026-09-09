@@ -5,7 +5,7 @@ import { HouseScene } from "./components/HouseScene.tsx";
 import { ControlSheet } from "./components/controls/ControlSheet.tsx";
 import { HANDLE_PX } from "./components/controls/sheet.ts";
 import { StatStrip } from "./components/StatStrip.tsx";
-import { StatusBanner } from "./components/StatusBanner.tsx";
+import { StatusBanner, StatusNotices } from "./components/StatusBanner.tsx";
 import { skyPalette } from "./components/scene/palette.ts";
 
 export default function App() {
@@ -53,7 +53,10 @@ export default function App() {
 	return (
 		<div className="flex h-full flex-col bg-page">
 			<StatusBanner state={state} connection={connection} />
-			<main className="min-h-0 flex-1">
+			{/* `relative` so the notices can float over the scene instead of taking
+			    layout space above it - see StatusNotices for why that matters. */}
+			<main className="relative min-h-0 flex-1">
+				<StatusNotices state={state} connection={connection} />
 				<HouseScene state={state} />
 			</main>
 			<StatStrip state={state} />

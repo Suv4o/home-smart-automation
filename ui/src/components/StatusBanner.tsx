@@ -77,19 +77,6 @@ export function StatusBanner({ state, connection }: { state: DashboardState; con
 				</button>
 			</div>
 
-			{state.override && (
-				<p className="mt-2 inline-block rounded-full bg-surface px-4 py-1 text-lg text-warning">
-					manual override · {countdown(state.override.until)}
-					{state.override.releaseWhenDone && " · or until the car is full"}
-				</p>
-			)}
-			{connection !== "live" && (
-				<p className="mt-2 text-lg text-serious">
-					{connection === "offline" ? "reconnecting to the daemon…" : "connecting…"}
-				</p>
-			)}
-			{state.errors.length > 0 && <p className="mt-2 text-base text-serious">{state.errors[0]}</p>}
-
 			<Dialog open={why} title={`Why is it ${headlineVerb(headline)}?`} onClose={() => setWhy(false)}>
 				<p className="text-lg leading-snug text-ink">
 					{waiting
@@ -155,4 +142,40 @@ function windowDetail(window: string | undefined, l: DashboardState["limits"]): 
 				? `${clockLabel(l.morningStartMin)}–${clockLabel(l.freeStartMin)}`
 				: `after ${clockLabel(l.freeEndMin)}`;
 	return `${name} · ${when}`;
+}
+
+/**
+ * The notices that come and go: an active override, a lost connection, a read
+ * failure.
+ *
+ * These live *over* the illustration rather than inside the header, and that is
+ * the whole point. In the header each one added a line, which shortened the
+ * space left for the scene - and the scene sizes its frame to the space it is
+ * given, so an override appearing made the whole illustration visibly shrink.
+ * Floating them costs no layout, so nothing moves when they arrive or go.
+ *
+ * The top of the scene is empty sky, so there is nothing underneath to obscure.
+ */
+export function StatusNotices({ state, connection }: { state: DashboardState; connection: Connection }) {
+	const override = state.override;
+	const offline = connection !== "live";
+	const error = state.errors[0];
+	if (!override && !offline && !error) return null;
+
+	return (
+		<div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col items-start gap-2 px-6 pt-1">
+			{override && (
+				<p className="rounded-full bg-surface/95 px-4 py-1 text-lg text-warning">
+					manual override · {countdown(override.until)}
+					{override.releaseWhenDone && " · or until the car is full"}
+				</p>
+			)}
+			{offline && (
+				<p className="rounded-full bg-surface/95 px-4 py-1 text-lg text-serious">
+					{connection === "offline" ? "reconnecting to the daemon…" : "connecting…"}
+				</p>
+			)}
+			{error && <p className="rounded-full bg-surface/95 px-4 py-1 text-base text-serious">{error}</p>}
+		</div>
+	);
 }

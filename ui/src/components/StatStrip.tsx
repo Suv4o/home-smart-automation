@@ -73,7 +73,13 @@ function Tile({
 				{icon}
 				<span>{label}</span>
 			</div>
-			{note && <div className="mt-0.5 text-sm text-muted">{note}</div>}
+			{/*
+			  * Always rendered, empty or not. The note comes and goes with the car's
+			  * state, and letting it change the strip's height resized the
+			  * illustration above it every time - the scene fits itself to whatever
+			  * space is left, so 22px here moved the whole drawing.
+			  */}
+			<div className="mt-0.5 min-h-5 text-sm text-muted">{note}</div>
 		</div>
 	);
 }
