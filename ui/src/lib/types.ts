@@ -30,7 +30,14 @@ export interface DashboardState {
 		chargingState: string | null;
 	} | null;
 	decision: { action: Action; window: Window; reason: string; source: "policy" | "override" } | null;
-	override: { mode: "force_on" | "force_off"; until: number; setAt: number; releaseWhenDone?: boolean } | null;
+	override: {
+		mode: "force_on" | "force_off";
+		until: number;
+		setAt: number;
+		releaseWhenDone?: boolean;
+		/** Epoch ms it starts. Absent = already running. */
+		from?: number;
+	} | null;
 	limits: {
 		mainSwitchLimitW: number;
 		carPowerW: number;

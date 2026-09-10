@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ChargerState } from "../src/charger/types.ts";
 import type { PolicyConfig } from "../src/config.ts";
-import { decide, windowFor } from "../src/engine/policy.ts";
+import { applyCarSocGate, decide, windowFor } from "../src/engine/policy.ts";
 import type { EnergySnapshot } from "../src/providers/types.ts";
 
 const config: PolicyConfig = {
@@ -176,5 +176,40 @@ describe("solar-surplus window (after 14:00)", () => {
 		const onNoDraw: ChargerState = { on: true, powerW: 0 };
 		// baseHouse = 2500 - 2000(nominal) = 500; need 1750; solar 2500 -> on.
 		assert.equal(act(at(15), snap({ solarW: 2500, loadW: 2500 }), onNoDraw), "on");
+	});
+});
+
+/**
+ * The dashboard must show the decision the tick will actually make.
+ *
+ * It briefly did not: the display ran only the window rules and skipped the car
+ * battery gate, so with the car at 81% against an 80% start limit the screen
+ * announced "STARTING TO CHARGE" while the daemon, having applied the gate, left
+ * the plug alone. Both steps, or the screen is fiction.
+ */
+describe("displayed decision matches the tick", () => {
+	const bypassing = {
+		minutesOfDay: 17 * 60 + 20,
+		snapshot: { solarW: 408, loadW: 174, gridW: -234, batteryW: 0, batterySoc: 99, at: new Date(), source: "web" },
+		charger: { on: false, powerW: 0 },
+		config,
+		override: null,
+	} as const;
+
+	it("the window rules alone would start a charge here", () => {
+		// House battery full and the sun still up: the bypass says charge.
+		assert.equal(decide(bypassing).action, "on");
+	});
+
+	it("but the car gate stops it, and that is what must be shown", () => {
+		const base = decide(bypassing);
+		const shown = applyCarSocGate(base, { soc: 81, stale: false }, bypassing.charger, config);
+		assert.equal(shown.action, "off");
+		assert.match(shown.reason, /above the 80% start limit/);
+	});
+
+	it("and it does start once the car is back under the gate", () => {
+		const base = decide(bypassing);
+		assert.equal(applyCarSocGate(base, { soc: 79, stale: false }, bypassing.charger, config).action, "on");
 	});
 });

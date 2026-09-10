@@ -6,6 +6,7 @@ import type { AppConfig } from "../config.ts";
 import { clearOverride, type OverrideMode, saveOverride } from "../engine/override.ts";
 import { logger } from "../logger.ts";
 import type { StateStore } from "./state.ts";
+import { nextOccurrenceMs } from "../time.ts";
 import type { World } from "./world.ts";
 
 /** Keep SSE connections from being dropped by idle timeouts. */
@@ -105,15 +106,34 @@ export function startServer(deps: ServerDeps, signal: AbortSignal): void {
 			mode?: string;
 			hours?: number;
 			releaseWhenDone?: unknown;
+			/** Optional "HH:MM" wall-clock start, resolved here rather than by the client. */
+			startAt?: unknown;
 		};
 		if (body.mode !== "force_on" && body.mode !== "force_off") {
 			return c.json({ error: "mode must be force_on or force_off" }, 400);
 		}
 		const hours = typeof body.hours === "number" && body.hours > 0 && body.hours <= 12 ? body.hours : 2;
+
+		// The start time is resolved on this side on purpose. The tablet may be set
+		// to another timezone, and the windows the user is scheduling around are
+		// Melbourne wall time - so "22:00" has to mean 22:00 to the policy, not to
+		// whatever clock the browser happens to be running.
+		let from: number | undefined;
+		if (body.startAt !== undefined && body.startAt !== null && body.startAt !== "") {
+			if (typeof body.startAt !== "string") {
+				return c.json({ error: "startAt must be a HH:MM string" }, 400);
+			}
+			const resolved = nextOccurrenceMs(body.startAt);
+			if (resolved === null) return c.json({ error: `startAt is not a time of day: ${body.startAt}` }, 400);
+			from = resolved;
+		}
+
+		// The run length counts from when it starts, not from when it was set.
 		const override = await saveOverride(
 			body.mode as OverrideMode,
-			Date.now() + hours * 3_600_000,
+			(from ?? Date.now()) + hours * 3_600_000,
 			body.releaseWhenDone === true,
+			from,
 		);
 
 		await deps.runTick(); // act immediately so the button feels instant

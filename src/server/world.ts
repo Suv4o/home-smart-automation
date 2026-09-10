@@ -4,6 +4,7 @@ import type { AppConfig } from "../config.ts";
 import { type ChargeState, chargeState } from "../engine/charge-state.ts";
 import {
 	type Calibration,
+	isSamplingMinute,
 	loadCalibration,
 	nextFactor,
 	sampleFactor,
@@ -11,8 +12,8 @@ import {
 } from "../providers/solar-calibration.ts";
 import { estimatePv, fetchWeather, type WeatherReading } from "../providers/weather.ts";
 import { MELBOURNE_TZ } from "../time.ts";
-import { loadOverride } from "../engine/override.ts";
-import { decide } from "../engine/policy.ts";
+import { isActive, loadOverride } from "../engine/override.ts";
+import { applyCarSocGate, decide } from "../engine/policy.ts";
 import { logger } from "../logger.ts";
 import type { EnergySnapshot, SolarProvider } from "../providers/types.ts";
 import { melbourneClock } from "../time.ts";
@@ -30,6 +31,11 @@ const MAX_ERRORS = 3;
  * upstream only updates every ~5 minutes, so a re-fetch is throttled to
  * `solarmanMinIntervalMs`. The plug is local and cheap, so it's read every time.
  *
+ * The decision shown here runs the *same two steps* the tick does - the window
+ * rules and then the car's own battery gate. Skipping the second one made the
+ * dashboard announce "starting to charge" while the daemon, having applied it,
+ * left the plug alone.
+ *
  * The car is read here in exactly one case: while it is genuinely drawing power.
  * A charging car is already awake, so polling it costs no wake, and the
  * percentage can then climb visibly instead of sitting on an hour-old figure.
@@ -42,6 +48,7 @@ export class World {
 	#weatherInFlight = false;
 	#calibration: Calibration | null = null;
 	#calibrationLoaded = false;
+	#lastSampledHour: string | null = null;
 	#errors: string[] = [];
 	/** Previous charge state, so we can spot the moment a charge begins. */
 	#wasCharging = false;
@@ -140,8 +147,22 @@ export class World {
 		const ghi = this.#currentIrradiance();
 		if (!snapshot || arrayKwp === null || ghi === null) return;
 
-		const sample = sampleFactor(snapshot.solarW, ghi, arrayKwp);
-		if (sample === null) return; // weak sun or an implausible ratio: learn nothing
+		// One sample per forecast hour, taken near its midpoint. The irradiance
+		// figure is an hourly average, so a reading every fifteen seconds adds no
+		// information - it just drowns the average in whatever the last ten minutes
+		// happened to look like.
+		const clock = melbourneClock();
+		const hourKey = `${new Date().toDateString()}:${clock.hour}`;
+		if (this.#lastSampledHour === hourKey || !isSamplingMinute(clock.minute)) return;
+
+		const sample = sampleFactor({
+			observedW: snapshot.solarW,
+			ghiWm2: ghi,
+			arrayKwp,
+			batterySoc: snapshot.batterySoc,
+		});
+		if (sample === null) return; // weak sun, a full battery, or an implausible ratio
+		this.#lastSampledHour = hourKey;
 
 		const before = this.#calibration?.factor;
 		this.#calibration = nextFactor(this.#calibration, sample);
@@ -210,7 +231,23 @@ export class World {
 
 		const decision =
 			snapshot && charger
-				? decide({ minutesOfDay: clock.minutesOfDay, snapshot, charger, config: policy, override })
+				? applyCarSocGate(
+						decide({
+							minutesOfDay: clock.minutesOfDay,
+							snapshot,
+							charger,
+							config: policy,
+							// Pending overrides are shown, never acted on - so the preview
+							// matches what the tick will actually do.
+							override: override && isActive(override) ? override : null,
+						}),
+						// From the cache, never a fresh read: the display must not wake the
+						// car. Slightly staler than the tick's view, which is the price of
+						// showing the gate at all.
+						car ? { soc: car.soc, stale: Date.now() - car.at >= this.#config.car.socTtlMs } : null,
+						charger,
+						policy,
+					)
 				: null;
 
 		const state: DashboardState = {

@@ -78,3 +78,20 @@ export function etaLabel(minutesToFull: number | null, ageMs: number): string | 
 	const mins = remaining % 60;
 	return mins === 0 ? `${hours}h left` : `${hours}h ${mins}m left`;
 }
+
+/** "in 3h 12m" - how long until a scheduled override begins. */
+export function until(startMs: number, now = Date.now()): string {
+	const mins = Math.max(0, Math.round((startMs - now) / 60_000));
+	if (mins < 1) return "any moment";
+	if (mins < 60) return `in ${mins}m`;
+	const h = Math.floor(mins / 60);
+	const m = mins % 60;
+	return m === 0 ? `in ${h}h` : `in ${h}h ${m}m`;
+}
+
+/** "22:00" in the given zone, from an epoch. */
+export function clockAt(ms: number, timeZone: string): string {
+	return new Intl.DateTimeFormat("en-AU", { timeZone, hour: "2-digit", minute: "2-digit", hourCycle: "h23" }).format(
+		new Date(ms),
+	);
+}

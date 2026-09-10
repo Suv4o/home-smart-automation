@@ -6,7 +6,7 @@ import { TapoCliCharger } from "./charger/tapo-cli.ts";
 import type { ChargerController } from "./charger/types.ts";
 import { loadConfig } from "./config.ts";
 import { chargeState, overrideAction } from "./engine/charge-state.ts";
-import { clearOverride, loadOverride, markOverrideCharging } from "./engine/override.ts";
+import { clearOverride, isActive, loadOverride, markOverrideCharging } from "./engine/override.ts";
 import { applyCarSocGate, type CarSoc, decide } from "./engine/policy.ts";
 import { logger } from "./logger.ts";
 import { seedRefreshToken, SolarmanWebProvider, tokenCachePath } from "./providers/solarman-web.ts";
@@ -178,6 +178,9 @@ async function runOnce(config: ReturnType<typeof loadConfig>, dryRun: boolean): 
 	// the decision - so the same tick that notices it is done also hands the plug
 	// back to the schedule.
 	let override = await loadOverride();
+	// A scheduled override that hasn't started yet is stored and displayed, but
+	// the schedule keeps the plug until its time comes.
+	const pending = override !== null && !isActive(override);
 	// Cache only - the tick has not read the car yet at this point, and the point
 	// of this call is to settle the override, not to justify waking the vehicle.
 	const cachedCar = await new TeslaCar(config.car.controlCmd, config.car.socTtlMs).cachedSoc();
@@ -186,7 +189,7 @@ async function runOnce(config: ReturnType<typeof loadConfig>, dryRun: boolean): 
 		config.car.drawMinW,
 		cachedCar && { soc: cachedCar.soc, chargeLimit: cachedCar.chargeLimit, chargingState: cachedCar.chargingState },
 	);
-	switch (overrideAction(override, charge)) {
+	switch (overrideAction(pending ? null : override, charge)) {
 		case "release":
 			await clearOverride();
 			logger.info("car stopped drawing — override released, back to automatic");
@@ -204,7 +207,7 @@ async function runOnce(config: ReturnType<typeof loadConfig>, dryRun: boolean): 
 		snapshot,
 		charger: chargerState,
 		config: config.policy,
-		override,
+		override: pending ? null : override,
 	});
 
 	// Only wake the car once everything else already says "charge" - reading the
@@ -229,7 +232,9 @@ async function runOnce(config: ReturnType<typeof loadConfig>, dryRun: boolean): 
 			plugOn: chargerState.on,
 			plugW: Math.round(chargerState.powerW),
 			carSoc: carSoc ? carSoc.soc : undefined,
-			override: override ? override.mode : undefined,
+			// Distinguish "an override is driving this" from "one is stored but not
+			// due yet" - the log is the only record of why a tick decided what it did.
+			override: override ? (pending ? `${override.mode} (scheduled)` : override.mode) : undefined,
 			decision: decision.action,
 		},
 		decision.reason,

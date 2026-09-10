@@ -14,6 +14,12 @@ export type OverrideMode = "force_on" | "force_off";
 
 export interface Override {
 	readonly mode: OverrideMode;
+	/**
+	 * Epoch ms from which this override starts applying. Absent means immediately.
+	 * Between `setAt` and here the override is *pending*: stored and shown, but
+	 * the schedule still has the plug.
+	 */
+	readonly from?: number;
 	/** Epoch ms after which this override stops applying. */
 	readonly until: number;
 	readonly setAt: number;
@@ -46,6 +52,22 @@ export function isExpired(o: Override, now = Date.now()): boolean {
 	return now >= o.until;
 }
 
+/** Scheduled, but its start time hasn't arrived yet. */
+export function isPending(o: Override, now = Date.now()): boolean {
+	return o.from !== undefined && now < o.from;
+}
+
+/**
+ * Whether this override should be driving the plug right now.
+ *
+ * A pending one deliberately isn't: it exists so the dashboard can say what is
+ * coming, but the schedule keeps control until its start time. Only an active
+ * override is ever handed to `decide`.
+ */
+export function isActive(o: Override, now = Date.now()): boolean {
+	return !isExpired(o, now) && !isPending(o, now);
+}
+
 /** Reads the stored override, treating an expired or malformed one as absent. */
 export async function loadOverride(now = Date.now()): Promise<Override | null> {
 	let raw: string;
@@ -70,12 +92,31 @@ export async function loadOverride(now = Date.now()): Promise<Override | null> {
 	}
 }
 
-export async function saveOverride(mode: OverrideMode, until: number, releaseWhenDone = false): Promise<Override> {
+export async function saveOverride(
+	mode: OverrideMode,
+	until: number,
+	releaseWhenDone = false,
+	from?: number,
+): Promise<Override> {
 	// Only force_on can "finish", so the flag is dropped rather than stored
 	// misleadingly on a pause.
-	const o: Override = { mode, until, setAt: Date.now(), releaseWhenDone: releaseWhenDone && mode === "force_on" };
+	const o: Override = {
+		mode,
+		until,
+		setAt: Date.now(),
+		releaseWhenDone: releaseWhenDone && mode === "force_on",
+		...(from === undefined ? {} : { from }),
+	};
 	await write(o);
-	logger.info({ mode, until: new Date(until).toISOString(), releaseWhenDone: o.releaseWhenDone }, "override set");
+	logger.info(
+		{
+			mode,
+			from: from === undefined ? "now" : new Date(from).toISOString(),
+			until: new Date(until).toISOString(),
+			releaseWhenDone: o.releaseWhenDone,
+		},
+		"override set",
+	);
 	return o;
 }
 

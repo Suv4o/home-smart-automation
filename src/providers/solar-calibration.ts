@@ -32,12 +32,37 @@ const MIN_GHI_WM2 = 200;
 const MIN_SOLAR_W = 300;
 
 /**
+ * Above this the house battery can no longer absorb surplus, so the inverter
+ * throttles the panels to whatever the house and the grid will take. Output then
+ * measures *demand*, not sun, and calibrating on it is actively harmful: a full
+ * battery on a quiet afternoon produced a ratio of 0.34 against 1.51 at midday
+ * on the same clear day, and averaging the two destroyed the figure.
+ */
+const MAX_BATTERY_SOC_PCT = 95;
+
+/**
  * Weight of one new sample. Deliberately small: the irradiance figure is an
  * hourly average while the generation reading is instantaneous, so on a broken
  * cloudy day individual samples disagree wildly. Averaging many of them over
  * days is what makes the number trustworthy.
  */
 const ALPHA = 0.08;
+
+/**
+ * Only sample around the middle of an hour, and only once per hour.
+ *
+ * The irradiance figure is an hourly average, so there is no new information
+ * within the hour - and the reading nearest its midpoint is the fairest match
+ * for it. Sampling on every display refresh instead meant 240 readings an hour,
+ * which turned this average into a rolling ten-minute one that swung with the
+ * afternoon.
+ */
+export const SAMPLE_FROM_MINUTE = 20;
+export const SAMPLE_TO_MINUTE = 40;
+
+export function isSamplingMinute(minute: number): boolean {
+	return minute >= SAMPLE_FROM_MINUTE && minute <= SAMPLE_TO_MINUTE;
+}
 
 export interface Calibration {
 	factor: number;
@@ -61,7 +86,15 @@ const FILE = join(
  * error in either figure becomes a huge ratio, and a handful of those would drag
  * the average somewhere silly.
  */
-export function sampleFactor(observedW: number, ghiWm2: number, arrayKwp: number): number | null {
+export function sampleFactor(o: {
+	observedW: number;
+	ghiWm2: number;
+	arrayKwp: number;
+	/** House battery level; a full one means the panels are being throttled. */
+	batterySoc: number;
+}): number | null {
+	const { observedW, ghiWm2, arrayKwp, batterySoc } = o;
+	if (batterySoc >= MAX_BATTERY_SOC_PCT) return null; // demand-limited, not sun-limited
 	if (!(arrayKwp > 0) || ghiWm2 < MIN_GHI_WM2 || observedW < MIN_SOLAR_W) return null;
 	const idealW = (ghiWm2 / 1000) * arrayKwp * 1000;
 	if (!(idealW > 0)) return null;

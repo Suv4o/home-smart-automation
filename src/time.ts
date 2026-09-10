@@ -39,3 +39,26 @@ export function melbourneClock(date: Date = new Date()): MelbourneClock {
 export function melbourneMinutesOfDay(date: Date = new Date()): number {
 	return melbourneClock(date).minutesOfDay;
 }
+
+/**
+ * When "HH:MM" next comes round, as epoch milliseconds.
+ *
+ * Resolved as a *duration from now* rather than by constructing a local date:
+ * the user picking 22:00 means "in about three hours", and measuring forward
+ * from the current Melbourne wall time gets that right across a DST boundary
+ * without any offset arithmetic of our own. A time that has already passed today
+ * means tomorrow.
+ *
+ * Returns null for anything that isn't a real time of day, so a malformed value
+ * is rejected rather than silently scheduling something for the epoch.
+ */
+export function nextOccurrenceMs(hhmm: string, now: Date = new Date()): number | null {
+	const m = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(hhmm.trim());
+	if (!m) return null;
+
+	const target = Number(m[1]) * 60 + Number(m[2]);
+	const current = melbourneClock(now).minutesOfDay;
+	// Same minute counts as "now", not "in 24 hours".
+	const deltaMin = target >= current ? target - current : target - current + 24 * 60;
+	return now.getTime() + deltaMin * 60_000;
+}

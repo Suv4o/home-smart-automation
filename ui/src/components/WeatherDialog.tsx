@@ -40,7 +40,14 @@ export function WeatherDialog({
 
 					<div className="mt-5 space-y-4 border-t border-hairline pt-4">
 						{days.map((day, i) => (
-							<Outlook key={day} label={i === 0 ? "Today" : "Tomorrow"} hours={hoursOn(state, day)} thresholdW={threshold} />
+							<Outlook
+								key={day}
+								label={i === 0 ? "Today" : "Tomorrow"}
+								hours={hoursOn(state, day)}
+								thresholdW={threshold}
+								timezone={state.timezone}
+								isToday={i === 0}
+							/>
 						))}
 					</div>
 
@@ -80,10 +87,14 @@ function Outlook({
 	label,
 	hours,
 	thresholdW,
+	timezone,
+	isToday,
 }: {
 	label: string;
 	hours: { time: string; radiationWm2: number; estimatedW: number | null }[];
 	thresholdW: number;
+	timezone: string;
+	isToday: boolean;
 }) {
 	const window = sunWindow(hours, thresholdW);
 	const peak = peakW(hours);
@@ -103,36 +114,76 @@ function Outlook({
 			{peak !== null && (
 				<p className="mt-0.5 text-base text-muted">peak about {(peak / 1000).toFixed(1)} kW</p>
 			)}
-			<SunBar hours={hours} thresholdW={thresholdW} />
+			<SunBar hours={hours} thresholdW={thresholdW} timezone={timezone} isToday={isToday} />
 		</div>
 	);
 }
 
-/** A day at a glance: one bar per daylight hour, filled bars clear the bar. */
+/**
+ * A day at a glance: one bar per daylight hour.
+ *
+ * The bars carry hour labels because without them the shape means nothing - you
+ * could see a good afternoon but not know whether it was morning or evening, and
+ * "peak 2.5 kW" gives no clue when to plug in. Today also marks the current
+ * hour, so you can see at once how much of the good sun is still ahead.
+ */
 function SunBar({
 	hours,
 	thresholdW,
+	timezone,
+	isToday,
 }: {
 	hours: { time: string; radiationWm2: number; estimatedW: number | null }[];
 	thresholdW: number;
+	timezone: string;
+	isToday: boolean;
 }) {
 	const daylight = hours.filter((h) => h.radiationWm2 > 0);
 	if (!daylight.length) return null;
 	const max = Math.max(...daylight.map((h) => h.radiationWm2));
+	const nowHour = isToday ? Number(new Intl.DateTimeFormat("en-AU", { timeZone: timezone, hour: "2-digit", hourCycle: "h23" }).format(new Date())) : -1;
+
+	// Label roughly every third hour, always including the first and last, so a
+	// short winter day still gets both ends without crowding a long summer one.
+	const step = Math.max(1, Math.round(daylight.length / 4));
 
 	return (
-		<div className="mt-2 flex items-end gap-[3px]" aria-hidden>
-			{daylight.map((h) => {
-				const good = h.estimatedW !== null && h.estimatedW >= thresholdW;
-				return (
-					<span
-						key={h.time}
-						className={`w-full rounded-sm ${good ? "bg-good" : "bg-hairline"}`}
-						style={{ height: `${Math.max(3, (h.radiationWm2 / max) * 34)}px` }}
-						title={`${hhmm(h.time)} · ${Math.round(h.radiationWm2)} W/m²`}
-					/>
-				);
-			})}
+		<div className="mt-2">
+			<div className="flex items-end gap-[3px]">
+				{daylight.map((h) => {
+					const good = h.estimatedW !== null && h.estimatedW >= thresholdW;
+					const isNow = Number(h.time.slice(11, 13)) === nowHour;
+					return (
+						<span
+							key={h.time}
+							className={`relative w-full rounded-sm ${good ? "bg-good" : "bg-hairline"} ${
+								isNow ? "outline outline-2 outline-offset-1 outline-ink-dim" : ""
+							}`}
+							style={{ height: `${Math.max(3, (h.radiationWm2 / max) * 34)}px` }}
+							title={`${hhmm(h.time)} · ${Math.round(h.radiationWm2)} W/m²${h.estimatedW === null ? "" : ` · ~${h.estimatedW} W`}`}
+						/>
+					);
+				})}
+			</div>
+
+			<div className="mt-1 flex gap-[3px]">
+				{daylight.map((h, i) => {
+					const show = i % step === 0 || i === daylight.length - 1;
+					const isNow = Number(h.time.slice(11, 13)) === nowHour;
+					return (
+						<span
+							key={h.time}
+							className={`w-full text-center text-[10px] tabular-nums ${isNow ? "font-bold text-ink-dim" : "text-muted"}`}
+						>
+							{show || isNow ? h.time.slice(11, 13) : ""}
+						</span>
+					);
+				})}
+			</div>
+
+			{isToday && nowHour >= 0 && (
+				<p className="mt-1 text-xs text-muted">outlined bar is the hour you are in now</p>
+			)}
 		</div>
 	);
 }

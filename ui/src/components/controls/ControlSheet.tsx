@@ -112,6 +112,8 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 	const [hoursFor, setHoursFor] = useState<Mode | null>(null);
 	const [hours, setHours] = useState(HOURS_DEFAULT);
 	const [releaseWhenDone, setReleaseWhenDone] = useState(false);
+	const [scheduled, setScheduled] = useState(false);
+	const [startAt, setStartAt] = useState("22:00");
 	const [askCar, setAskCar] = useState(false);
 	const [askUnlock, setAskUnlock] = useState(false);
 	const [pinOpen, setPinOpen] = useState(false);
@@ -233,6 +235,7 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 							onClick={() => {
 								setHours(HOURS_DEFAULT);
 								setReleaseWhenDone(false);
+								setScheduled(false);
 								setHoursFor("force_on");
 							}}
 						/>
@@ -242,6 +245,7 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 							hint={`for ${hoursLabel(HOURS_DEFAULT)}`}
 							onClick={() => {
 								setHours(HOURS_DEFAULT);
+								setScheduled(false);
 								setHoursFor("force_off");
 							}}
 						/>
@@ -323,8 +327,20 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 								// Only meaningful when charging; a pause has nothing to finish.
 								releaseWhenDone: charging && releaseWhenDone,
 							},
-							label: charging ? "Starting the charge" : "Pausing charging",
-							done: charging ? `Charging for ${hoursLabel(hours)}` : `Paused for ${hoursLabel(hours)}`,
+							// Only sent when asked for; otherwise the server starts it now.
+							...(scheduled ? { startAt } : {}),
+							label: scheduled
+								? charging
+									? `Scheduling a charge for ${startAt}`
+									: `Scheduling a pause for ${startAt}`
+								: charging
+									? "Starting the charge"
+									: "Pausing charging",
+							done: scheduled
+								? `${charging ? "Charging" : "Paused"} at ${startAt} for ${hoursLabel(hours)}`
+								: charging
+									? `Charging for ${hoursLabel(hours)}`
+									: `Paused for ${hoursLabel(hours)}`,
 							hint: PLUG_HINT,
 							closeOnSuccess: true,
 						});
@@ -332,6 +348,28 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 				}}
 			>
 				<HoursSlider hours={hours} onChange={setHours} />
+
+				{/* Scheduling applies to both directions: "charge from 22:00" and
+				    "pause from 16:00" are equally useful. */}
+				<Check
+					checked={scheduled}
+					onChange={setScheduled}
+					label="Start at a set time"
+					hint={
+						scheduled
+							? `Begins at ${startAt} and runs for ${hoursLabel(hours)}. Until then the normal schedule is in charge.`
+							: "Otherwise it starts straight away."
+					}
+				>
+					<input
+						type="time"
+						value={startAt}
+						onChange={(e) => setStartAt(e.target.value)}
+						onClick={(e) => e.stopPropagation()}
+						className="mt-3 w-full rounded-2xl bg-surface px-4 py-3 text-center text-2xl font-semibold tabular-nums text-ink outline-none focus:ring-2 focus:ring-good"
+					/>
+				</Check>
+
 				{hoursFor === "force_on" && (
 					<Check
 						checked={releaseWhenDone}
@@ -546,11 +584,15 @@ function Check({
 	onChange,
 	label,
 	hint,
+	children,
 }: {
 	checked: boolean;
 	onChange: (v: boolean) => void;
 	label: string;
 	hint?: string;
+	/** Revealed only when ticked - a control for a setting that is switched off
+	    is just something else to mis-tap. */
+	children?: ReactNode;
 }) {
 	return (
 		<button
@@ -571,9 +613,10 @@ function Check({
 					</svg>
 				)}
 			</span>
-			<span>
+			<span className="min-w-0 flex-1">
 				<span className="block text-lg font-medium leading-tight text-ink">{label}</span>
 				{hint && <span className="mt-1 block text-sm leading-snug text-muted">{hint}</span>}
+				{checked && children}
 			</span>
 		</button>
 	);

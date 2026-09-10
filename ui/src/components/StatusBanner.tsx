@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { Connection } from "../hooks/useLiveState.ts";
-import { clockLabel, countdown, power } from "../lib/format.ts";
+import { clockAt, clockLabel, countdown, power, until } from "../lib/format.ts";
 import type { DashboardState } from "../lib/types.ts";
 import { Dialog } from "./controls/Dialog.tsx";
 import { Clock } from "./Clock.tsx";
@@ -184,18 +184,28 @@ function windowDetail(window: string | undefined, l: DashboardState["limits"]): 
  */
 export function StatusNotices({ state, connection }: { state: DashboardState; connection: Connection }) {
 	const override = state.override;
+	const timezone = state.timezone;
+	// `from` in the future means the schedule still has the plug.
+	const pendingStart = override?.from !== undefined && override.from > Date.now() ? override.from : null;
 	const offline = connection !== "live";
 	const error = state.errors[0];
 	if (!override && !offline && !error) return null;
 
 	return (
 		<div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col items-start gap-2 px-6 pt-1">
-			{override && (
+			{override && pendingStart !== null ? (
+				/* Scheduled but not started. Saying "1h left" here would suggest it
+				   is already running and the plug is being held. */
+				<p className="rounded-full bg-surface/95 px-4 py-1 text-lg text-warning">
+					{override.mode === "force_on" ? "charge" : "pause"} scheduled for {clockAt(pendingStart, timezone)} ·{" "}
+					{until(pendingStart)}
+				</p>
+			) : override ? (
 				<p className="rounded-full bg-surface/95 px-4 py-1 text-lg text-warning">
 					manual override · {countdown(override.until)}
 					{override.releaseWhenDone && " · or until the car is full"}
 				</p>
-			)}
+			) : null}
 			{offline && (
 				<p className="rounded-full bg-surface/95 px-4 py-1 text-lg text-serious">
 					{connection === "offline" ? "reconnecting to the daemon…" : "connecting…"}
