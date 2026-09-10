@@ -2,6 +2,15 @@ import type { TeslaCar } from "../car/tesla.ts";
 import type { ChargerController, ChargerState } from "../charger/types.ts";
 import type { AppConfig } from "../config.ts";
 import { type ChargeState, chargeState } from "../engine/charge-state.ts";
+import {
+	type Calibration,
+	loadCalibration,
+	nextFactor,
+	sampleFactor,
+	saveCalibration,
+} from "../providers/solar-calibration.ts";
+import { estimatePv, fetchWeather, type WeatherReading } from "../providers/weather.ts";
+import { MELBOURNE_TZ } from "../time.ts";
 import { loadOverride } from "../engine/override.ts";
 import { decide } from "../engine/policy.ts";
 import { logger } from "../logger.ts";
@@ -29,6 +38,10 @@ const MAX_ERRORS = 3;
  */
 export class World {
 	#snapshot: { value: EnergySnapshot; at: number } | null = null;
+	#weather: { value: WeatherReading; at: number } | null = null;
+	#weatherInFlight = false;
+	#calibration: Calibration | null = null;
+	#calibrationLoaded = false;
 	#errors: string[] = [];
 	/** Previous charge state, so we can spot the moment a charge begins. */
 	#wasCharging = false;
@@ -70,6 +83,95 @@ export class World {
 		}
 	}
 
+	/**
+	 * Cached weather, re-fetched on its own TTL.
+	 *
+	 * Never awaited by `buildState`: the display refreshes every 15 seconds and a
+	 * weather call must not sit in front of it. A failure keeps the last good
+	 * reading, and only when that ages out does the UI lose the weather - the
+	 * energy dashboard carries on regardless, which is the whole contract for an
+	 * optional feed on a house that only needs the LAN.
+	 */
+	#refreshWeather(): void {
+		if (!this.#config.weather.enabled || this.#weatherInFlight) return;
+		const fresh = this.#weather && Date.now() - this.#weather.at < this.#config.weather.refreshMs;
+		if (fresh) return;
+		// Wait for the first Solarman reading when it is our only source of the
+		// array size - otherwise the opening forecast would carry no output
+		// estimates until the next refresh a quarter of an hour later.
+		if (this.#config.weather.arrayKwp === null && !this.#snapshot) return;
+
+		this.#weatherInFlight = true;
+		void fetchWeather({
+			latitude: this.#config.location.latitude,
+			longitude: this.#config.location.longitude,
+			// Configured value wins; otherwise use what Solarman already knows about
+			// this system, so the forecast works without anyone looking up their
+			// array size.
+			arrayKwp: this.#config.weather.arrayKwp ?? this.#snapshot?.value.arrayKwp ?? null,
+			factor: this.#calibration?.factor,
+			timezone: MELBOURNE_TZ,
+		})
+			.then((value) => {
+				this.#weather = { value, at: Date.now() };
+				this.#clearError("weather");
+			})
+			.catch((err) => this.#noteError("weather", err))
+			.finally(() => {
+				this.#weatherInFlight = false;
+			});
+	}
+
+	/**
+	 * Learn how much this roof makes per unit of forecast irradiance.
+	 *
+	 * Compares what the system is generating right now against the irradiance the
+	 * forecast gave for this hour. One measured ratio replaces guessing at roof
+	 * pitch, orientation, shading and inverter losses - and the guess was out by
+	 * 1.65x on this house, so the estimate is worth measuring rather than
+	 * modelling.
+	 */
+	async #calibrate(snapshot: EnergySnapshot | null): Promise<void> {
+		if (!this.#calibrationLoaded) {
+			this.#calibration = await loadCalibration();
+			this.#calibrationLoaded = true;
+		}
+		const arrayKwp = this.#config.weather.arrayKwp ?? snapshot?.arrayKwp ?? null;
+		const ghi = this.#currentIrradiance();
+		if (!snapshot || arrayKwp === null || ghi === null) return;
+
+		const sample = sampleFactor(snapshot.solarW, ghi, arrayKwp);
+		if (sample === null) return; // weak sun or an implausible ratio: learn nothing
+
+		const before = this.#calibration?.factor;
+		this.#calibration = nextFactor(this.#calibration, sample);
+		if (before !== this.#calibration.factor) {
+			logger.debug(
+				{ sample: Math.round(sample * 100) / 100, factor: this.#calibration.factor, samples: this.#calibration.samples },
+				"solar calibration updated",
+			);
+			await saveCalibration(this.#calibration);
+		}
+	}
+
+	/** Forecast irradiance for the hour we are currently in. */
+	#currentIrradiance(): number | null {
+		const sun = this.#weather?.value.sun;
+		if (!sun?.length) return null;
+		const now = new Date();
+		const key = new Intl.DateTimeFormat("sv-SE", {
+			timeZone: MELBOURNE_TZ,
+			year: "numeric",
+			month: "2-digit",
+			day: "2-digit",
+			hour: "2-digit",
+			hourCycle: "h23",
+		})
+			.format(now)
+			.replace(" ", "T");
+		return sun.find((h) => h.time.startsWith(key))?.radiationWm2 ?? null;
+	}
+
 	async chargerState(): Promise<ChargerState | null> {
 		try {
 			const s = await this.#charger.state();
@@ -96,6 +198,9 @@ export class World {
 		const now = new Date();
 		const clock = melbourneClock(now);
 		const { policy } = this.#config;
+
+		this.#refreshWeather();
+		void this.#calibrate(snapshot);
 
 		const charge = chargeState(
 			charger,
@@ -154,6 +259,34 @@ export class World {
 				freeStartMin: policy.freeStartMin,
 				freeEndMin: policy.freeEndMin,
 			},
+			weather: this.#weather
+				? {
+						temperatureC: this.#weather.value.temperatureC,
+						feelsLikeC: this.#weather.value.feelsLikeC,
+						cloudCoverPct: this.#weather.value.cloudCoverPct,
+						isDay: this.#weather.value.isDay,
+						condition: this.#weather.value.condition,
+						todayMaxC: this.#weather.value.todayMaxC,
+						todayMinC: this.#weather.value.todayMinC,
+						// Estimates are recomputed here, not baked in when the forecast was
+						// fetched: the calibration can change between refreshes and the
+						// figures on screen should follow it immediately rather than
+						// carrying a stale factor for up to a quarter of an hour.
+						sun: this.#weather.value.sun.map((h) => ({
+							time: h.time,
+							radiationWm2: h.radiationWm2,
+							estimatedW: estimatePv(
+								h.radiationWm2,
+								this.#config.weather.arrayKwp ?? this.#snapshot?.value.arrayKwp ?? null,
+								this.#calibration?.factor,
+							),
+						})),
+						ageMs: Date.now() - this.#weather.at,
+						solarFactor: this.#calibration?.factor ?? null,
+						solarSamples: this.#calibration?.samples ?? 0,
+					}
+				: null,
+			timezone: MELBOURNE_TZ,
 			errors: [...this.#errors],
 		};
 

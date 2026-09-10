@@ -21,6 +21,12 @@ export interface EnergySnapshot {
 	readonly batterySoc: number;
 	readonly batteryW: number;
 	readonly gridW: number;
+	/**
+	 * The array's rated size in kWp, when the provider can tell us. Not part of
+	 * any charging decision - it exists so the weather forecast can estimate
+	 * output without the owner having to look up their system's paperwork.
+	 */
+	readonly arrayKwp?: number | null;
 	readonly source: SnapshotSource;
 }
 

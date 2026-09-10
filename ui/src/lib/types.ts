@@ -42,5 +42,20 @@ export interface DashboardState {
 		freeStartMin: number;
 		freeEndMin: number;
 	};
+	weather: {
+		temperatureC: number;
+		feelsLikeC: number;
+		cloudCoverPct: number;
+		isDay: boolean;
+		condition: { code: number; label: string; icon: string };
+		todayMaxC: number | null;
+		todayMinC: number | null;
+		sun: { time: string; radiationWm2: number; estimatedW: number | null }[];
+		ageMs: number;
+		solarFactor: number | null;
+		solarSamples: number;
+	} | null;
+	/** The zone the policy runs on; the clock uses it so both agree. */
+	timezone: string;
 	errors: string[];
 }

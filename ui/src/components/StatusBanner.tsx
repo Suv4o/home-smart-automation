@@ -3,7 +3,9 @@ import type { Connection } from "../hooks/useLiveState.ts";
 import { clockLabel, countdown, power } from "../lib/format.ts";
 import type { DashboardState } from "../lib/types.ts";
 import { Dialog } from "./controls/Dialog.tsx";
-import { AlertIcon, BoltIcon, BoltOffIcon, InfoIcon, PlugIcon } from "./icons.tsx";
+import { Clock } from "./Clock.tsx";
+import { AlertIcon, BoltIcon, BoltOffIcon, InfoIcon, PlugIcon, WeatherIcon } from "./icons.tsx";
+import { WeatherDialog } from "./WeatherDialog.tsx";
 
 const WINDOW_LABEL: Record<string, string> = {
 	free: "free power",
@@ -28,6 +30,7 @@ const WINDOW_LABEL: Record<string, string> = {
  */
 export function StatusBanner({ state, connection }: { state: DashboardState; connection: Connection }) {
 	const [why, setWhy] = useState(false);
+	const [sky, setSky] = useState(false);
 	const d = state.decision;
 	const charging = d?.action === "on";
 	const blocked = d?.action === "off" && /main-switch/.test(d.reason);
@@ -66,7 +69,9 @@ export function StatusBanner({ state, connection }: { state: DashboardState; con
 			    `currentColor`; the ⓘ overrides it back to muted. */}
 			<div className={`flex items-center gap-3 ${tone}`}>
 				<span className="shrink-0">{status.icon}</span>
-				<h1 className="text-4xl font-bold tracking-tight">{headline}</h1>
+				{/* Truncates rather than wraps: a second header line would resize the
+				    illustration, which is a bug we have already fixed twice. */}
+				<h1 className="min-w-0 truncate text-4xl font-bold tracking-tight">{headline}</h1>
 				<button
 					type="button"
 					onClick={() => setWhy(true)}
@@ -75,7 +80,28 @@ export function StatusBanner({ state, connection }: { state: DashboardState; con
 				>
 					<InfoIcon />
 				</button>
+
+				{/* Pushed right, and never the thing that shrinks: the state matters
+				    most, so the headline truncates before this does. */}
+				<button
+					type="button"
+					onClick={() => setSky(true)}
+					aria-label="Sun and weather"
+					className="ml-auto flex shrink-0 items-center gap-3 rounded-2xl px-2 py-1 active:bg-hairline"
+				>
+					<Clock timezone={state.timezone} />
+					{state.weather && (
+						<span className="flex items-center gap-1.5 text-muted">
+							<WeatherIcon icon={state.weather.condition.icon} />
+							<span className="text-2xl font-semibold tabular-nums text-ink-dim">
+								{Math.round(state.weather.temperatureC)}°
+							</span>
+						</span>
+					)}
+				</button>
 			</div>
+
+			<WeatherDialog state={state} open={sky} onClose={() => setSky(false)} />
 
 			<Dialog open={why} title={`Why is it ${headlineVerb(headline)}?`} onClose={() => setWhy(false)}>
 				<p className="text-lg leading-snug text-ink">

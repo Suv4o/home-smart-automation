@@ -82,6 +82,20 @@ const Base = z.object({
 		LATITUDE: z.coerce.number().min(-90).max(90).default(-37.81),
 		LONGITUDE: z.coerce.number().min(-180).max(180).default(144.96),
 
+		// --- Weather (Open-Meteo: no API key, no account) ---
+		// Weather is strictly optional. The dashboard's job is the energy system,
+		// and the house only needs the LAN for the plug - so this turning itself
+		// off must never take anything else with it.
+		WEATHER_ENABLED: z
+			.string()
+			.default("true")
+			.transform((v) => /^(true|1|yes)$/i.test(v.trim())),
+		WEATHER_REFRESH_MINUTES: z.coerce.number().positive().default(15),
+		// Your array's rated size, used to estimate output from the forecast
+		// irradiance. Left unset, the outlook shows irradiance only rather than a
+		// kW figure it can't stand behind.
+		SOLAR_ARRAY_KWP: z.coerce.number().positive().optional(),
+
 		// --- Scheduling (the `watch` daemon) ---
 		// Cron expression for how often to tick. Default: :00 and :30 each hour.
 		SCHEDULE_CRON: z.string().min(1).default("0,30 * * * *"),
@@ -146,6 +160,8 @@ export interface AppConfig {
 	};
 	/** Home coordinates, used only for sun/moon position. */
 	readonly location: { latitude: number; longitude: number };
+	/** Weather feed. `arrayKwp` null means "don't estimate PV output". */
+	readonly weather: { enabled: boolean; refreshMs: number; arrayKwp: number | null };
 	/** Cron expression for the `watch` daemon's tick. */
 	readonly scheduleCron: string;
 }
@@ -196,6 +212,11 @@ export function loadConfig(): AppConfig {
 			token: e.DASHBOARD_TOKEN,
 		},
 		location: { latitude: e.LATITUDE, longitude: e.LONGITUDE },
+		weather: {
+			enabled: e.WEATHER_ENABLED,
+			refreshMs: e.WEATHER_REFRESH_MINUTES * 60_000,
+			arrayKwp: e.SOLAR_ARRAY_KWP ?? null,
+		},
 		scheduleCron: e.SCHEDULE_CRON,
 	};
 }

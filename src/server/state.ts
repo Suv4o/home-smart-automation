@@ -44,6 +44,29 @@ export interface DashboardState {
 	} | null;
 	readonly decision: { action: Action; window: Window; reason: string; source: "policy" | "override" } | null;
 	readonly override: Override | null;
+	/**
+	 * Null whenever weather is off, has never loaded, or the feed has been down
+	 * long enough to drop the last reading. The UI hides it rather than guessing.
+	 */
+	readonly weather: {
+		temperatureC: number;
+		feelsLikeC: number;
+		cloudCoverPct: number;
+		isDay: boolean;
+		condition: { code: number; label: string; icon: string };
+		todayMaxC: number | null;
+		todayMinC: number | null;
+		/** Hourly sun for today and tomorrow, for the solar outlook. */
+		sun: { time: string; radiationWm2: number; estimatedW: number | null }[];
+		/** Age of the reading in ms, so the UI can show it going stale. */
+		ageMs: number;
+		/** Output per unit of horizontal irradiance, measured from this roof. */
+		solarFactor: number | null;
+		/** How many readings that figure is built from, so the UI can qualify it. */
+		solarSamples: number;
+	} | null;
+	/** IANA zone the policy runs on, so the clock matches the schedule. */
+	readonly timezone: string;
 	/** Thresholds, so the UI can label what it's showing without hardcoding them. */
 	readonly limits: Pick<
 		PolicyConfig,

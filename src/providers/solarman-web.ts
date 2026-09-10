@@ -336,6 +336,29 @@ function requireNumber(node: unknown, field: string, endpoint: string): number {
  * Reads an enum-ish string field. Unknown values throw rather than defaulting,
  * because a wrong battery direction inverts every downstream safety decision.
  */
+/**
+ * The array's rated size, recovered from figures Solarman already publishes.
+ *
+ * "Full power hours" is generation divided by rated capacity - the standard
+ * equivalent-full-load-hours measure - so dividing back the other way returns the
+ * capacity. Saves the owner digging their system size out of installation
+ * paperwork just to get a forecast.
+ *
+ * Lifetime totals are used rather than today's: at dawn both of today's figures
+ * are near zero and their ratio is meaningless.
+ */
+export function deriveArrayKwp(fast: unknown): number | null {
+	const f = (fast ?? {}) as Record<string, unknown>;
+	const kwh = f["generationUploadTotal"];
+	const hours = f["fullPowerHoursTotal"];
+	if (typeof kwh !== "number" || typeof hours !== "number") return null;
+	if (!(hours > 1) || !(kwh > 0)) return null; // too new to say anything useful
+	const kwp = kwh / hours;
+	// Sanity band: domestic rooftop arrays live between these. Anything outside
+	// means the fields don't mean what we think, so say nothing.
+	return kwp >= 0.5 && kwp <= 100 ? Math.round(kwp * 100) / 100 : null;
+}
+
 function requireStatus(node: unknown, field: string, endpoint: string): string {
 	const v = (node as Record<string, unknown> | null)?.[field];
 	const s = typeof v === "string" ? v.trim().toUpperCase() : "";
@@ -395,6 +418,7 @@ export function mapSnapshot(fast: unknown, operating: unknown): EnergySnapshot {
 		batterySoc,
 		batteryW,
 		gridW,
+		arrayKwp: deriveArrayKwp(fast),
 		source: "web",
 	};
 }

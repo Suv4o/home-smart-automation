@@ -5,7 +5,11 @@
  * any given instant.
  */
 
-const MELBOURNE = "Australia/Melbourne";
+/** The zone the whole policy is expressed in. Exported so the dashboard clock
+ * shows the same wall time the schedule is judged against, rather than whatever
+ * the tablet happens to be set to. */
+export const MELBOURNE_TZ = "Australia/Melbourne";
+const MELBOURNE = MELBOURNE_TZ;
 
 export interface MelbourneClock {
 	readonly hour: number;

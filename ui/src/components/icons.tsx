@@ -142,3 +142,63 @@ export const LockUnknownIcon = ({ size = 24 }: Props) => (
 		<path d="M10.6 14.6a1.5 1.5 0 1 1 1.9 1.6v.9M12 18.9h.01" />
 	</svg>
 );
+
+/**
+ * Weather glyphs, keyed by the icon name the provider's WMO mapping returns.
+ * Coarse on purpose - at a glance from across a room, "light" versus "moderate"
+ * drizzle is noise.
+ */
+export function WeatherIcon({ icon, size = 26 }: { icon: string; size?: number }) {
+	const cloud = "M7.5 18h9.2a3.6 3.6 0 0 0 .3-7.2 5.2 5.2 0 0 0-9.9-1.2A3.7 3.7 0 0 0 7.5 18Z";
+	switch (icon) {
+		case "sun":
+			return (
+				<svg {...BASE} width={size} height={size}>
+					<circle cx="12" cy="12" r="4.4" />
+					<path d="M12 2.6v2.2M12 19.2v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.6 12h2.2M19.2 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6" />
+				</svg>
+			);
+		case "cloud-sun":
+			return (
+				<svg {...BASE} width={size} height={size}>
+					<circle cx="8.5" cy="8" r="3.1" />
+					<path d="M8.5 2.4v1.4M3.9 3.9l1 1M2.4 8.5h1.4M13.1 3.9l-1 1" />
+					<path d={cloud} />
+				</svg>
+			);
+		case "fog":
+			return (
+				<svg {...BASE} width={size} height={size}>
+					<path d="M4 9h16M3 13h18M5 17h14M7 21h10" />
+				</svg>
+			);
+		case "drizzle":
+		case "rain":
+			return (
+				<svg {...BASE} width={size} height={size}>
+					<path d="M7.5 15h9.2a3.6 3.6 0 0 0 .3-7.2 5.2 5.2 0 0 0-9.9-1.2A3.7 3.7 0 0 0 7.5 15Z" />
+					<path d={icon === "rain" ? "M8.5 18.5l-1 3M12 18.5l-1 3M15.5 18.5l-1 3" : "M9.5 18.5l-.6 1.8M14 18.5l-.6 1.8"} />
+				</svg>
+			);
+		case "snow":
+			return (
+				<svg {...BASE} width={size} height={size}>
+					<path d="M7.5 15h9.2a3.6 3.6 0 0 0 .3-7.2 5.2 5.2 0 0 0-9.9-1.2A3.7 3.7 0 0 0 7.5 15Z" />
+					<path d="M9 19h.01M12 20.5h.01M15 19h.01" />
+				</svg>
+			);
+		case "storm":
+			return (
+				<svg {...BASE} width={size} height={size}>
+					<path d="M7.5 14h9.2a3.6 3.6 0 0 0 .3-7.2 5.2 5.2 0 0 0-9.9-1.2A3.7 3.7 0 0 0 7.5 14Z" />
+					<path d="M12.8 16.4l-2.6 3.4h3l-1 2.6" />
+				</svg>
+			);
+		default:
+			return (
+				<svg {...BASE} width={size} height={size}>
+					<path d={cloud} />
+				</svg>
+			);
+	}
+}
