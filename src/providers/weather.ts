@@ -40,6 +40,9 @@ export interface WeatherReading {
 	readonly cloudCoverPct: number;
 	readonly isDay: boolean;
 	readonly condition: Condition;
+	/** Degrees the wind blows *from*, or null when unreported. */
+	readonly windDirectionDeg: number | null;
+	readonly precipitationMm: number;
 	readonly todayMaxC: number | null;
 	readonly todayMinC: number | null;
 	/** Today and tomorrow, hour by hour, for the solar outlook. */
@@ -147,7 +150,12 @@ export function forecastUrl(o: Options): string {
 	const url = new URL(o.baseUrl ?? BASE);
 	url.searchParams.set("latitude", String(roundCoord(o.latitude)));
 	url.searchParams.set("longitude", String(roundCoord(o.longitude)));
-	url.searchParams.set("current", "temperature_2m,apparent_temperature,weather_code,cloud_cover,is_day");
+	url.searchParams.set(
+		"current",
+		// Wind direction leans the rain the right way; precipitation separates a
+		// drizzle from a downpour. Both ride the call we were already making.
+		"temperature_2m,apparent_temperature,weather_code,cloud_cover,is_day,wind_direction_10m,precipitation",
+	);
 	url.searchParams.set("daily", "temperature_2m_max,temperature_2m_min");
 	url.searchParams.set("hourly", "shortwave_radiation");
 	url.searchParams.set("timezone", o.timezone);
@@ -182,6 +190,8 @@ export function parseForecast(json: unknown, arrayKwp: number | null, factor = D
 		cloudCoverPct: (cur["cloud_cover"] as number) ?? 0,
 		isDay: Number(cur["is_day"] ?? 0) === 1,
 		condition: wmoCondition(Number(cur["weather_code"] ?? -1)),
+		windDirectionDeg: typeof cur["wind_direction_10m"] === "number" ? cur["wind_direction_10m"] : null,
+		precipitationMm: typeof cur["precipitation"] === "number" ? cur["precipitation"] : 0,
 		todayMaxC: d.daily?.temperature_2m_max?.[0] ?? null,
 		todayMinC: d.daily?.temperature_2m_min?.[0] ?? null,
 		sun,

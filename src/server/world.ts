@@ -303,6 +303,8 @@ export class World {
 						cloudCoverPct: this.#weather.value.cloudCoverPct,
 						isDay: this.#weather.value.isDay,
 						condition: this.#weather.value.condition,
+						windDirectionDeg: this.#weather.value.windDirectionDeg,
+						precipitationMm: this.#weather.value.precipitationMm,
 						todayMaxC: this.#weather.value.todayMaxC,
 						todayMinC: this.#weather.value.todayMinC,
 						// Estimates are recomputed here, not baked in when the forecast was

@@ -55,6 +55,8 @@ export interface DashboardState {
 		cloudCoverPct: number;
 		isDay: boolean;
 		condition: { code: number; label: string; icon: string };
+		windDirectionDeg: number | null;
+		precipitationMm: number;
 		todayMaxC: number | null;
 		todayMinC: number | null;
 		sun: { time: string; radiationWm2: number; estimatedW: number | null }[];

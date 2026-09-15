@@ -274,3 +274,84 @@ export function skyPalette(daylight: number): Palette {
 	const t = Math.min(1, Math.max(0, daylight));
 	return t >= 0.5 ? mixPalette(DUSK, DAY, (t - 0.5) * 2) : mixPalette(NIGHT, DUSK, t * 2);
 }
+
+/**
+ * A grey day, chosen rather than filtered.
+ *
+ * Desaturating the day palette programmatically gives a washed-out version of a
+ * sunny scene; a real overcast is cooler and flatter, with the contrast between
+ * lit and shaded faces largely gone because there is no direct sun to cast it.
+ * Same reasoning as DUSK: averaging toward grey produced mud, so the grey is
+ * picked by hand.
+ */
+export const OVERCAST: Palette = {
+	page: "#DEDFDD",
+	ground: "#CFD2CE",
+	groundEdge: "#6E8A85",
+	drive: "#DCDDD9",
+	driveEdge: "#BFC1BC",
+
+	// Barely separated: flat light means the three faces stop reading as three.
+	wallTop: "#DFDFDC",
+	wallLeft: "#D2D3CF",
+	wallRight: "#BFC1BD",
+
+	roofTop: "#3A4452",
+	roofLeft: "#333C49",
+	roofRight: "#2B333E",
+	soffit: "#B8BAB6",
+
+	panel: "#2E3742",
+	panelGrid: "#454F5C",
+	panelLit: "#5C6675",
+
+	windowFrame: "#3A4452",
+	windowGlass: "#C3CBD2",
+	windowLight: "#E8DFC4",
+
+	foliage: "#5E7F79",
+	foliageDark: "#3D5A58",
+	foliageLight: "#6F918A",
+	trunk: "#6A6A64",
+
+	car: "#C25742",
+	carDark: "#8E3B2C",
+	carGlass: "#9AA6AE",
+
+	device: "#D5D6D2",
+	deviceEdge: "#B4B6B1",
+
+	ink: "#242A31",
+	inkDim: "#4C545D",
+	muted: "#7A8087",
+	shadow: "rgba(40,46,54,0.14)",
+
+	surface: "#D5D7D3",
+	hairline: "#C2C4BF",
+
+	// Unchanged from DAY: these are validated against a light surface and the
+	// overcast page is light too, so they keep their contrast.
+	flowGood: "#0A7D28",
+	flowWarning: "#A05C06",
+	flowBattery: "#2364B0",
+	flowCritical: "#B02D2C",
+};
+
+/** Heaviest overcast still leaves a quarter of the scene's own colour. */
+const MAX_OVERCAST = 0.75;
+
+/**
+ * The palette for the current sky, cloud included.
+ *
+ * Cloud is scaled by daylight so night is untouched - a cloudy night already
+ * looks like night, and greying it further would say nothing. The cap stops even
+ * total cover from replacing the scene's identity: it should still look like
+ * this house, on a grey day.
+ */
+export function weatherPalette(daylight: number, cloudCoverPct: number | null): Palette {
+	const base = skyPalette(daylight);
+	if (cloudCoverPct === null) return base;
+	const cover = Math.min(100, Math.max(0, cloudCoverPct)) / 100;
+	const t = cover * Math.min(1, Math.max(0, daylight)) * MAX_OVERCAST;
+	return t <= 0 ? base : mixPalette(base, OVERCAST, t);
+}

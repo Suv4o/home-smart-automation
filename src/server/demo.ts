@@ -25,19 +25,25 @@ function demoSun(peakWm2: number): { time: string; radiationWm2: number; estimat
 	);
 }
 
+/** One entry per branch the scene draws, so none of them go unlooked-at. */
+const DEMO_CONDITIONS: Record<number, { code: number; label: string; icon: string }> = {
+	0: { code: 0, label: "Clear", icon: "sun" },
+	2: { code: 2, label: "Partly cloudy", icon: "cloud-sun" },
+	3: { code: 3, label: "Overcast", icon: "cloud" },
+	45: { code: 45, label: "Fog", icon: "fog" },
+	53: { code: 53, label: "Drizzle", icon: "drizzle" },
+	63: { code: 63, label: "Rain", icon: "rain" },
+	95: { code: 95, label: "Thunderstorm", icon: "storm" },
+};
+
 const demoWeather = (tempC: number, code: number, cloud: number, isDay = true) => ({
 	temperatureC: tempC,
 	feelsLikeC: tempC - 2.4,
 	cloudCoverPct: cloud,
 	isDay,
-	condition:
-		code === 0
-			? { code, label: "Clear", icon: "sun" }
-			: code === 2
-				? { code, label: "Partly cloudy", icon: "cloud-sun" }
-				: code === 3
-					? { code, label: "Overcast", icon: "cloud" }
-					: { code, label: "Showers", icon: "rain" },
+	condition: DEMO_CONDITIONS[code] ?? { code, label: "Cloudy", icon: "cloud" },
+	windDirectionDeg: 250,
+	precipitationMm: code >= 51 ? 1.4 : 0,
 	todayMaxC: tempC + 3,
 	todayMinC: tempC - 6,
 	sun: demoSun(code === 0 ? 900 : code === 2 ? 620 : 260),
@@ -100,6 +106,7 @@ export const SCENARIOS: Scenario[] = [
 			// Live socket, nothing drawing: the giveaway is the handful of watts.
 			charger: { on: true, powerW: 4 },
 			car: { soc: 52, at: b.at, ageMs: 3 * 3_600_000, minutesToFull: null, chargeLimit: 80, locked: false, chargingState: "Disconnected" },
+			weather: demoWeather(16, 63, 96),
 			decision: {
 				action: "on",
 				window: "solar",
@@ -134,6 +141,7 @@ export const SCENARIOS: Scenario[] = [
 			energy: { solarW: 1250, loadW: 5345, gridW: 10359, batteryW: 6270, batterySoc: 73, at: b.at },
 			charger: { on: false, powerW: 0 },
 			car: { soc: 52, at: b.at, ageMs: 9 * 60_000, minutesToFull: null, chargeLimit: 80, locked: true, chargingState: "Stopped" },
+			weather: demoWeather(21, 95, 99),
 			decision: {
 				action: "off",
 				window: "free",
@@ -162,8 +170,10 @@ export const SCENARIOS: Scenario[] = [
 			energy: { solarW: 0, loadW: 1450, gridW: 90, batteryW: -1360, batterySoc: 48, at: b.at },
 			charger: { on: false, powerW: 0 },
 			car: { soc: 87, at: new Date(Date.now() - 9 * 3_600_000).toISOString(), ageMs: 9 * 3_600_000, minutesToFull: null, chargeLimit: 80, locked: false, chargingState: "Disconnected" },
-			// No weather at all: the feed is optional and the layout must hold without it.
-			weather: null,
+			// Stars *and* cloud, deliberately: the only scenario where a cloud can be
+			// seen passing in front of a star, which is what proves it occludes
+			// rather than washes over.
+			weather: demoWeather(9, 2, 34, false),
 			decision: { action: "off", window: "solar", reason: "solar 0W < 2415W needed (house 1450W + 2000W car)", source: "policy" },
 		}),
 	},
@@ -175,6 +185,8 @@ export const SCENARIOS: Scenario[] = [
 			energy: { solarW: 240, loadW: 3100, gridW: 1150, batteryW: 0, batterySoc: 34, at: b.at },
 			charger: { on: true, powerW: 1980 },
 			car: { soc: 24, at: b.at, ageMs: 2 * 60_000, minutesToFull: 205, chargeLimit: 80, locked: true, chargingState: "Charging" },
+			// The feed is optional; this scenario proves the layout holds without it.
+			weather: null,
 			override: { mode: "force_on", until: Date.now() + 82 * 60_000, setAt: Date.now() },
 			decision: { action: "on", window: "morning", reason: "manual override: charge now", source: "override" },
 		}),

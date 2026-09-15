@@ -134,6 +134,36 @@ a {
   user-select: text;
 }
 
+/*
+ * Weather motion. Transform and opacity only - the same rule the flow dots
+ * follow, because those are the properties the compositor can animate without
+ * touching layout or paint. The reduced-motion block below freezes all of it,
+ * leaving the weather visible but still.
+ */
+@keyframes cloud-drift {
+  /* A full sweep well past both edges, so clouds enter and leave off-frame
+     rather than materialising inside the picture. */
+  from { transform: translateX(-620px); }
+  to   { transform: translateX(620px); }
+}
+
+@keyframes star-breathe {
+  0%, 100% { opacity: 0.25; }
+  50%      { opacity: 0.9; }
+}
+
+@keyframes rain-fall {
+  from { transform: translateY(-40px); opacity: 0; }
+  12%  { opacity: 1; }
+  88%  { opacity: 1; }
+  to   { transform: translateY(120px); opacity: 0; }
+}
+
+@keyframes fog-drift {
+  from { transform: translateX(-26px); }
+  to   { transform: translateX(26px); }
+}
+
 /* Dialog entrance. Transform and opacity only, so it composites. */
 @keyframes fade-in {
   from { opacity: 0; }

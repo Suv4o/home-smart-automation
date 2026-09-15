@@ -54,6 +54,9 @@ export interface DashboardState {
 		cloudCoverPct: number;
 		isDay: boolean;
 		condition: { code: number; label: string; icon: string };
+		/** Degrees the wind blows from; the scene uses it to lean the rain. */
+		windDirectionDeg: number | null;
+		precipitationMm: number;
 		todayMaxC: number | null;
 		todayMinC: number | null;
 		/** Hourly sun for today and tomorrow, for the solar outlook. */

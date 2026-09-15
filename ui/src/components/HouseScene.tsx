@@ -3,7 +3,7 @@ import type { DashboardState } from "../lib/types.ts";
 import { FlowTrace, toneColor } from "./scene/FlowTrace.tsx";
 import { anchor } from "./scene/iso.ts";
 import { CAR, LABEL_AT, project, ROUTES } from "./scene/layout.ts";
-import { type Palette, skyPalette } from "./scene/palette.ts";
+import { type Palette, weatherPalette } from "./scene/palette.ts";
 import {
 	Battery,
 	Charger,
@@ -15,6 +15,7 @@ import {
 	Window,
 } from "./scene/parts/Buildings.tsx";
 import { Foliage, Moon, SunRays } from "./scene/parts/Nature.tsx";
+import { Clouds, Fog, Rain, Stars } from "./scene/parts/Weather.tsx";
 import { TeslaCar } from "./scene/parts/TeslaCar.tsx";
 
 /** World units are ~380 wide once projected; this frames them with air around. */
@@ -32,7 +33,11 @@ const VIEW = "-280 -324 535 580";
  */
 export function HouseScene({ state }: { state: DashboardState }) {
 	const { energy, charger, car, sky, decision } = state;
-	const p: Palette = skyPalette(sky.daylight);
+	// Cloud greys the whole scene, not just the sky - an overcast noon should
+	// look flat, so a low solar figure reads as weather rather than a fault.
+	const w = state.weather;
+	const cloud = w?.cloudCoverPct ?? null;
+	const p: Palette = weatherPalette(sky.daylight, cloud);
 	const night = 1 - sky.daylight;
 
 	const solarW = energy?.solarW ?? 0;
@@ -62,7 +67,14 @@ export function HouseScene({ state }: { state: DashboardState }) {
 			aria-label="Isometric illustration of the house showing where energy is flowing">
 			<style>{`@keyframes trace-run { from { offset-distance: 0% } to { offset-distance: 100% } }`}</style>
 
+			{/* Only with a real reading. Defaulting to a clear sky would put stars
+			    over an overcast night we simply have not been told about - the same
+			    rule the rest of the dashboard follows about unknowns. */}
+			{w && <Stars coverPct={w.cloudCoverPct} isDay={w.isDay} />}
 			{sky.phase === "night" ? <Moon phase={sky.moonPhase} fraction={sky.moonFraction} /> : <SunRays intensity={solarIntensity} />}
+			{/* After the sun deliberately: a cloud drifting across genuinely covers
+			    it, rather than the sun being dimmed by a number. */}
+			{cloud !== null && <Clouds p={p} coverPct={cloud} night={sky.phase === "night"} />}
 
 			<Ground p={p} />
 			<Foliage p={p} behind />
@@ -86,6 +98,18 @@ export function HouseScene({ state }: { state: DashboardState }) {
 
 			<TeslaCar p={p} soc={car?.soc ?? null} charging={Boolean(charger?.on)} />
 			<Foliage p={p} behind={false} />
+
+			{/* Weather over the scene, but before the labels below - the kW figures
+			    have to stay readable through a downpour. */}
+			<Fog p={p} active={w?.condition.icon === "fog"} />
+			{w && (
+				<Rain
+					icon={w.condition.icon}
+					precipitationMm={w.precipitationMm ?? 0}
+					windFromDeg={w.windDirectionDeg ?? null}
+					night={sky.phase === "night"}
+				/>
+			)}
 
 			{/* Values. Solar is labelled at the panels with an arrow rather than
 			    piped down from the sun. */}
