@@ -65,6 +65,12 @@ See **[docs/running-locally.md](docs/running-locally.md)** for the full walk-thr
 Node + Python deps, `.env`, seeding Solarman auth, a smoke test, and installing
 the `launchd` schedule. In short:
 
+> Running it on the always-on box instead of a laptop?
+> **[docs/running-on-the-server.md](docs/running-on-the-server.md)** covers the
+> Ubuntu/systemd side: getting in over SSH, service and log commands, where the
+> secrets live, and the failure modes that have actually bitten.
+
+
 ```sh
 npm install
 brew install uv                 # plug CLI deps are fetched by uv (inline, cached)
