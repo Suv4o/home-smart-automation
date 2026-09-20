@@ -152,7 +152,8 @@ export function Battery({ p, soc, low }: { p: Palette; soc: number; low: boolean
 			<path d={b.top} fill={p.device} />
 			<path d={level} fill={low ? p.flowWarning : p.flowGood} opacity={0.85} style={{ transition: "d 900ms ease" }} />
 			<path d={b.left} fill="none" stroke={p.deviceEdge} strokeWidth={1.5} />
-			<text x={label.x} y={label.y + 5} textAnchor="middle" fill={p.ink} style={{ fontSize: 13, fontWeight: 700 }}>
+			{/* Sized in CSS rather than inline so the phone media query can win. */}
+			<text x={label.x} y={label.y + 5} textAnchor="middle" fill={p.ink} className="scene-pct">
 				{Math.round(soc)}%
 			</text>
 		</g>

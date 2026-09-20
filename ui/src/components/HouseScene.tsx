@@ -146,11 +146,17 @@ function Value({ x, y, text, colour, p }: { x: number; y: number; text: string; 
 
 	return (
 		<g transform={`translate(${x} ${y})`}>
-			<rect x={-w / 2} y={-h / 2} width={w} height={h} rx={h / 2} fill={p.surface} stroke={p.hairline} strokeWidth={1} />
-			<circle cx={-w / 2 + 12 + 4} cy={0} r={4} fill={colour} />
-			<text x={-w / 2 + 12 + 8 + 6} y={5} fill={p.ink} style={{ fontSize: 16, fontWeight: 700 }}>
-				{text}
-			</text>
+			{/* The inner group is what `.scene-badge` scales on a phone. The pill has
+			    to grow as a unit: its width comes from the text's own length, so
+			    enlarging the type alone would push it straight out of its background.
+			    Everything here is centred on 0,0, which is also the scale origin. */}
+			<g className="scene-badge">
+				<rect x={-w / 2} y={-h / 2} width={w} height={h} rx={h / 2} fill={p.surface} stroke={p.hairline} strokeWidth={1} />
+				<circle cx={-w / 2 + 12 + 4} cy={0} r={4} fill={colour} />
+				<text x={-w / 2 + 12 + 8 + 6} y={5} fill={p.ink} style={{ fontSize: 16, fontWeight: 700 }}>
+					{text}
+				</text>
+			</g>
 		</g>
 	);
 }

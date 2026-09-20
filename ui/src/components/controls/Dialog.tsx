@@ -61,21 +61,41 @@ export function Dialog({
 			{/* eslint-disable-next-line jsx-a11y/no-static-element-interactions */}
 			<div className="absolute inset-0 bg-black/55 animate-[fade-in_160ms_ease-out]" onClick={onClose} aria-hidden />
 
+			{/*
+			  * Three bands: the title and the buttons are pinned, and only the body
+			  * between them scrolls.
+			  *
+			  * The panel used to size itself to its content with no ceiling, which is
+			  * fine for a PIN prompt and not at all fine for the weather dialog - two
+			  * bar charts and a paragraph ran off the bottom of a phone screen, taking
+			  * Cancel and Confirm with them and leaving no way to answer or dismiss
+			  * it. Scrolling the whole panel would have been the easier fix and the
+			  * worse one: the buttons would still have to be hunted for.
+			  */}
 			<div
 				ref={panel}
 				role="dialog"
 				aria-modal="true"
 				aria-label={title}
-				className="relative m-4 w-full max-w-md rounded-3xl border border-hairline bg-surface p-6 shadow-2xl animate-[dialog-in_200ms_cubic-bezier(0.22,1,0.36,1)]"
+				className="relative m-4 flex w-full max-w-md flex-col rounded-3xl border border-hairline bg-surface p-6 shadow-2xl animate-[dialog-in_200ms_cubic-bezier(0.22,1,0.36,1)]"
+				style={{
+					// The m-4 above, plus whatever iOS reserves top and bottom.
+					maxHeight:
+						"calc(100 * var(--vh-unit) - 2rem - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px))",
+				}}
 			>
-				<h2 className="text-2xl font-bold text-ink">{title}</h2>
-				{description && <p className="mt-1.5 text-base leading-snug text-ink-dim">{description}</p>}
+				<h2 className="shrink-0 text-2xl font-bold text-ink">{title}</h2>
+				{description && <p className="mt-1.5 shrink-0 text-base leading-snug text-ink-dim">{description}</p>}
 
-				{children && <div className="mt-5">{children}</div>}
+				{children && (
+					<div className="-mx-1 mt-5 min-h-0 flex-1 overflow-y-auto px-1" style={{ overscrollBehavior: "contain" }}>
+						{children}
+					</div>
+				)}
 
-				{error && <p className="mt-4 text-base font-medium text-critical">{error}</p>}
+				{error && <p className="mt-4 shrink-0 text-base font-medium text-critical">{error}</p>}
 
-				<div className="mt-6 flex gap-3">
+				<div className="mt-6 flex shrink-0 gap-3">
 					<button
 						type="button"
 						onClick={onClose}

@@ -128,6 +128,31 @@ body {
    */
 }
 
+/*
+ * Scene labels on a phone.
+ *
+ * The illustration keeps a fixed 535x580 frame and is scaled to fit whatever box
+ * it is given, so its labels shrink with it: on a phone the scene draws at about
+ * 0.76 and in landscape nearer 0.46, which turns 13 user units of type into
+ * roughly ten device pixels, then seven. The house reads fine at that size - a
+ * number does not.
+ *
+ * Sized in SVG user units, so these grow the label *relative to the house* and
+ * leave the tablet, which has the room, exactly as drawn. `.scene-badge` scales a
+ * whole group because both badges size their background from the text inside
+ * them; the battery percentage has no such container, so its type grows alone.
+ */
+.scene-pct {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+@media (max-width: 639.98px) {
+  /* Scale origin is 0,0, which is where both badges are already centred. */
+  .scene-badge { transform: scale(1.26); }
+  .scene-pct { font-size: 17px; }
+}
+
 /* Ubuntu ships proportional figures, which makes live values jump about as they
    change width. Force tabular figures everywhere a number is shown. */
 .tabular-nums, text, .value {

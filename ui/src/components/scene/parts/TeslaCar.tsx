@@ -54,6 +54,10 @@ export function TeslaCar({ p, soc, charging }: { p: Palette; soc: number | null;
 			<g transform="translate(-4 -66)">
 				{/* short leader, so the badge reads as belonging to the car */}
 				<line x1={0} y1={17} x2={0} y2={25} stroke={p.deviceEdge} strokeWidth={2} />
+				{/* Scaled as a unit on a phone: the ring is sized to the text it holds,
+				    so the two cannot grow independently. The leader line above stays
+				    put and is simply covered a little further by the larger badge. */}
+				<g className="scene-badge">
 				<circle r={17} fill={p.device} opacity={0.96} />
 				<circle r={15} fill="none" stroke={p.deviceEdge} strokeWidth={3.5} />
 				{soc !== null && (
@@ -71,6 +75,7 @@ export function TeslaCar({ p, soc, charging }: { p: Palette; soc: number | null;
 				<text textAnchor="middle" y={5} fill={p.ink} style={{ fontSize: 13, fontWeight: 700 }}>
 					{soc === null ? "?" : `${Math.round(soc)}%`}
 				</text>
+				</g>
 			</g>
 		</g>
 	);
