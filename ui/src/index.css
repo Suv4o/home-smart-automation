@@ -63,7 +63,33 @@
   --color-battery: #4285d6;
 }
 
+/*
+ * A phone in landscape, and nothing else.
+ *
+ * The height guard is what keeps the kiosk tablet out of it: that runs portrait,
+ * and even turned on its side it is far taller than this. A desktop window this
+ * short is rare enough, and the layout still holds if one appears.
+ */
+@custom-variant landscape-phone (@media (orientation: landscape) and (max-height: 540px));
+
+/*
+ * One viewport percent, as the best unit this browser has.
+ *
+ * `vh` measures the viewport with the URL bar hidden, so on a phone with the bar
+ * showing anything sized in `vh` overshoots the screen. `dvh` follows what is
+ * actually visible. The old tablet's browser may have neither, and an unknown
+ * unit invalidates the whole declaration - hence the @supports rather than a
+ * bare `dvh`, which would collapse the control sheet to nothing.
+ */
+:root { --vh-unit: 1vh; }
+@supports (height: 1dvh) {
+  :root { --vh-unit: 1dvh; }
+}
+
 html, body, #root { height: 100%; }
+@supports (height: 1dvh) {
+  html, body, #root { height: 100dvh; }
+}
 
 /*
  * Kiosk behaviour: the page itself never scrolls or bounces.

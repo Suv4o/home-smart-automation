@@ -15,7 +15,7 @@ export function StatStrip({ state }: { state: DashboardState }) {
 	const fresh = freshness(car ? car.ageMs : null);
 
 	return (
-		<div className="grid grid-cols-4 gap-px bg-hairline">
+		<div className="grid grid-cols-4 gap-px bg-hairline landscape-phone:h-full landscape-phone:w-[136px] landscape-phone:shrink-0 landscape-phone:grid-cols-1 landscape-phone:grid-rows-4 landscape-phone:overflow-hidden">
 			<Tile icon={<SolarIcon />} label="solar" value={e ? power(e.solarW) : "—"} tone={e && e.solarW > 50 ? "text-good" : "text-ink"} />
 			<Tile icon={<HomeIcon />} label="home" value={e ? power(e.loadW) : "—"} tone="text-ink" />
 			<Tile
@@ -67,9 +67,15 @@ function Tile({
 	note?: string;
 }) {
 	return (
-		<div className="bg-page px-3 py-4 text-center">
-			<div className={`text-3xl font-bold tabular-nums ${tone}`}>{value}</div>
-			<div className="mt-1 flex items-center justify-center gap-1.5 text-base uppercase tracking-wide text-muted">
+		<div className="flex flex-col justify-center overflow-hidden bg-page px-1.5 py-2 text-center sm:px-3 sm:py-4 landscape-phone:py-0.5">
+			{/*
+			  * `whitespace-nowrap` is load-bearing, not tidiness. At phone width a
+			  * tile is ~100px and "6.2 kW" at the tablet's type size does not fit, so
+			  * it wrapped to two lines - which is what made this strip 178px tall and
+			  * took a fifth of the screen away from the illustration.
+			  */}
+			<div className={`whitespace-nowrap text-xl font-bold tabular-nums sm:text-3xl landscape-phone:text-base ${tone}`}>{value}</div>
+			<div className="mt-0.5 flex items-center justify-center gap-1 whitespace-nowrap text-[11px] uppercase tracking-wide text-muted [&_svg]:size-3.5 sm:mt-1 sm:gap-1.5 sm:text-base sm:[&_svg]:size-[18px] landscape-phone:text-[10px] landscape-phone:[&_svg]:size-3">
 				{icon}
 				<span>{label}</span>
 			</div>
@@ -79,7 +85,7 @@ function Tile({
 			  * illustration above it every time - the scene fits itself to whatever
 			  * space is left, so 22px here moved the whole drawing.
 			  */}
-			<div className="mt-0.5 min-h-5 text-sm text-muted">{note}</div>
+			<div className="mt-0.5 min-h-4 text-[10px] leading-tight text-muted sm:min-h-5 sm:text-sm landscape-phone:mt-0 landscape-phone:min-h-0 landscape-phone:text-[9px] landscape-phone:empty:hidden">{note}</div>
 		</div>
 	);
 }

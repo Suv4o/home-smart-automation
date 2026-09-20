@@ -4,7 +4,7 @@ import { dashed, toneColor } from "./tone.ts";
 import { dotCount, polylineLength, roundedPath } from "./geometry.ts";
 import { box, iso } from "./iso.ts";
 import { project, ROUTES } from "./layout.ts";
-import { DAY, DUSK, mixColor, mixPalette, NIGHT, skyPalette } from "./palette.ts";
+import { contrastRatio, DAY, DUSK, mixColor, mixPalette, NIGHT, skyPalette, weatherPalette } from "./palette.ts";
 
 /** Screen y-coordinates out of SVG path data, for comparing face heights. */
 function ys(d: string): number[] {
@@ -220,5 +220,59 @@ describe("waiting wire", () => {
 	it("keeps that separation on the dark surface too", () => {
 		assert.notEqual(toneColor(NIGHT, "waiting", NIGHT.muted), NIGHT.muted);
 		assert.notEqual(toneColor(NIGHT, "waiting", NIGHT.muted), toneColor(NIGHT, "good", NIGHT.muted));
+	});
+});
+
+describe("twilight stays readable", () => {
+	// The bug this exists for: mixPalette lerps every key on its own, and across
+	// DUSK -> DAY the ink inverts from light to dark while the page inverts from
+	// dark to light. Both crossed mid-grey at the same moment, so around 75%
+	// daylight the text was #888a8d on #8f8992 - a ratio of 1.02, invisible.
+	// Checking the four palettes at their endpoints never caught it, because the
+	// endpoints were never the problem.
+	const sweep = (step = 0.01): number[] => {
+		const out: number[] = [];
+		for (let d = 0; d <= 1.0001; d += step) out.push(Math.min(1, d));
+		return out;
+	};
+
+	it("keeps the headline readable at every point between night and day", () => {
+		for (const d of sweep()) {
+			const p = skyPalette(d);
+			const r = contrastRatio(p.ink, p.page);
+			assert.ok(r >= 4, `daylight ${d.toFixed(2)}: ink ${p.ink} on ${p.page} is ${r.toFixed(2)}:1`);
+		}
+	});
+
+	it("keeps the small labels readable too", () => {
+		// A lower bar than the headline on purpose: DAY's own muted label sits at
+		// 3.13 on its cream page, so this asks the blend to be no worse than the
+		// palettes it is blending, not better.
+		for (const d of sweep()) {
+			const p = skyPalette(d);
+			const r = contrastRatio(p.muted, p.page);
+			assert.ok(r >= 3, `daylight ${d.toFixed(2)}: muted ${p.muted} on ${p.page} is ${r.toFixed(2)}:1`);
+		}
+	});
+
+	it("holds up under cloud, which stacks a second blend on the first", () => {
+		for (const d of sweep(0.05)) {
+			for (const cloud of [0, 25, 50, 75, 100]) {
+				const p = weatherPalette(d, cloud);
+				const r = contrastRatio(p.ink, p.page);
+				assert.ok(r >= 4, `daylight ${d.toFixed(2)} cloud ${cloud}%: ${r.toFixed(2)}:1`);
+			}
+		}
+	});
+
+	it("leaves the hand-picked palettes exactly as they were", () => {
+		// readableTones only steps in when a blend fails, so the four originals
+		// must come back untouched - otherwise it is quietly restyling the scene.
+		assert.equal(skyPalette(0).ink, NIGHT.ink);
+		assert.equal(skyPalette(0).muted, NIGHT.muted);
+		assert.equal(skyPalette(0.5).ink, DUSK.ink);
+		assert.equal(skyPalette(0.5).muted, DUSK.muted);
+		assert.equal(skyPalette(1).ink, DAY.ink);
+		assert.equal(skyPalette(1).muted, DAY.muted);
 	});
 });

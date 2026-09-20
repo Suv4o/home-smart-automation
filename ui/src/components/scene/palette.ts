@@ -265,6 +265,95 @@ export const DUSK: Palette = {
 	flowCritical: "#CE4A46",
 };
 
+
+/**
+ * WCAG relative luminance, and the contrast ratio between two colours.
+ *
+ * Here to keep the twilight blend honest rather than for an audit: the palettes
+ * are hand-checked at their endpoints, but nothing was checking the colours the
+ * *lerp* invents in between.
+ */
+export function luminance(colour: string): number {
+	const c = parse(colour);
+	if (!c) return 0;
+	const [r, g, b] = [c[0], c[1], c[2]].map((v) => {
+		const s = v / 255;
+		return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+	}) as [number, number, number];
+	return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+export function contrastRatio(a: string, b: string): number {
+	const la = luminance(a);
+	const lb = luminance(b);
+	return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
+}
+
+/**
+ * The bars each tone has to clear against the page.
+ *
+ * Two of them, because the tones are not held to the same standard by design:
+ * DAY's own muted label sits at 3.13 against its cream page and always has, so
+ * demanding 4.5 of it would rewrite a palette that is not broken. The point is
+ * to catch the blend falling *below* what the hand-picked ends already accept.
+ */
+const MIN_CONTRAST = 4.5;
+const MIN_MUTED_CONTRAST = 3;
+
+/**
+ * The two inks twilight picks between.
+ *
+ * Deliberately harder than DAY's and NIGHT's own inks. Those only ever sit on a
+ * page at one end of the range, where there is contrast to spare; these have to
+ * work against a mid-grey page where there is none, and the extra reach buys
+ * about half a contrast point exactly where it is scarcest. They never apply at
+ * the endpoints, so no hand-picked palette is touched.
+ */
+const TWILIGHT_INK_DARK = "#0C121B";
+const TWILIGHT_INK_LIGHT = "#FBFCFE";
+
+/**
+ * Text tones that survive the twilight blend.
+ *
+ * The bug this fixes: `ink` and `page` invert across DUSK -> DAY - light text on
+ * a dark page becomes dark text on a light one - and lerping every key
+ * independently walks *both* through mid-grey at the same moment. Around 75%
+ * daylight the ink landed on #888a8d and the page on #8f8992: a contrast ratio
+ * of 1.02, which is text you genuinely cannot see. The endpoints were always
+ * fine, so checking them never caught it.
+ *
+ * Text cannot cross-fade through that: any blend between a light and a dark ink
+ * passes through the very grey that is unreadable. So the ink switches outright
+ * to whichever of the two hand-picked inks the current page can carry, and the
+ * dimmer tones are re-derived from it by mixing back toward that page - which
+ * keeps their relationship to the ink constant instead of assuming a page they
+ * were never chosen for.
+ *
+ * Palettes that already pass are returned untouched, so DAY, NIGHT, DUSK and
+ * OVERCAST keep their hand-picked tones exactly.
+ */
+export function readableTones(p: Palette): Palette {
+	// Checked on the weakest tone as well as the strongest: a blend can leave the
+	// headline perfectly legible while the small labels under it disappear, and
+	// ink alone would wave that through.
+	if (contrastRatio(p.ink, p.page) >= MIN_CONTRAST && contrastRatio(p.muted, p.page) >= MIN_MUTED_CONTRAST) {
+		return p;
+	}
+	const ink = contrastRatio(TWILIGHT_INK_DARK, p.page) >= contrastRatio(TWILIGHT_INK_LIGHT, p.page)
+		? TWILIGHT_INK_DARK
+		: TWILIGHT_INK_LIGHT;
+	return {
+		...p,
+		ink,
+		// Tighter steps than DAY and NIGHT use. Those sit on a page at one end of
+		// the range with contrast to spare; here the page is mid-grey and there is
+		// none, so the dimmer tones stay closer to the ink. Measured: it lifts the
+		// muted label from 2.10 to 3.12 at the worst point.
+		inkDim: mixColor(ink, p.page, 0.15),
+		muted: mixColor(ink, p.page, 0.28),
+	};
+}
+
 /**
  * The palette for a given daylight fraction (0 dark, 1 full day), by way of
  * twilight. Two half-blends rather than one long one, so nothing ever sits on
@@ -272,7 +361,8 @@ export const DUSK: Palette = {
  */
 export function skyPalette(daylight: number): Palette {
 	const t = Math.min(1, Math.max(0, daylight));
-	return t >= 0.5 ? mixPalette(DUSK, DAY, (t - 0.5) * 2) : mixPalette(NIGHT, DUSK, t * 2);
+	const blended = t >= 0.5 ? mixPalette(DUSK, DAY, (t - 0.5) * 2) : mixPalette(NIGHT, DUSK, t * 2);
+	return readableTones(blended);
 }
 
 /**
@@ -353,5 +443,7 @@ export function weatherPalette(daylight: number, cloudCoverPct: number | null): 
 	if (cloudCoverPct === null) return base;
 	const cover = Math.min(100, Math.max(0, cloudCoverPct)) / 100;
 	const t = cover * Math.min(1, Math.max(0, daylight)) * MAX_OVERCAST;
-	return t <= 0 ? base : mixPalette(base, OVERCAST, t);
+	// Re-checked after the cloud mix: OVERCAST is a light palette with dark ink,
+	// so blending it over a dark twilight page can undo what skyPalette settled.
+	return t <= 0 ? base : readableTones(mixPalette(base, OVERCAST, t));
 }

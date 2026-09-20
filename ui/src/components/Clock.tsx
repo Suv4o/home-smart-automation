@@ -39,7 +39,7 @@ export function Clock({ timezone }: { timezone: string }) {
 	}).format(now);
 
 	return (
-		<time className="text-3xl font-bold tabular-nums text-ink" dateTime={now.toISOString()}>
+		<time className="text-xl font-bold tabular-nums text-ink sm:text-3xl" dateTime={now.toISOString()}>
 			{time}
 		</time>
 	);

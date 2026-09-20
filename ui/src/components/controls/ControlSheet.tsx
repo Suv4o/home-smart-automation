@@ -4,17 +4,18 @@ import { AutoIcon, BoltIcon, CarIcon, LockedIcon, LockUnknownIcon, PauseIcon, Un
 import { Dialog } from "./Dialog.tsx";
 import {
 	clampHours,
-	HALF_VH,
-	HANDLE_PX,
+	handleTotal,
 	HOURS_DEFAULT,
 	HOURS_MAX,
 	HOURS_MIN,
 	hoursLabel,
 	nextStage,
-	PANEL_VH,
+	panelHeight,
 	panelOffset,
+	scrollerMaxHeight,
 	type Stage,
 	swipeDirection,
+	visibleHeight,
 } from "./sheet.ts";
 
 const TOKEN_KEY = "dashboard-token";
@@ -203,7 +204,7 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 			<div
 				className="fixed inset-x-0 bottom-0 z-40 flex flex-col rounded-t-3xl border-t border-hairline bg-surface"
 				style={{
-					height: `${PANEL_VH}vh`,
+					height: panelHeight(),
 					transform: `translateY(${panelOffset(stage)})`,
 					transition: "transform 320ms cubic-bezier(0.22, 1, 0.36, 1)",
 				}}
@@ -217,7 +218,14 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 					// `touch-action: none` is what stops the page moving underneath. Without
 					// it the browser treats the same drag as a scroll and runs its own
 					// overscroll animation alongside ours, which is the shudder you see.
-					style={{ height: HANDLE_PX, touchAction: "none" }}
+					// Taller than the strip by whatever iOS reserves underneath, with the
+					// extra as padding so the chevron centres in the tappable part and
+					// stays clear of the home indicator rather than sharing space with it.
+					style={{
+						height: handleTotal(),
+						paddingBottom: "env(safe-area-inset-bottom, 0px)",
+						touchAction: "none",
+					}}
 					onTouchStart={onTouchStart}
 					onTouchEnd={onTouchEnd}
 				>
@@ -226,7 +234,18 @@ export function ControlSheet({ state, onDone }: { state: DashboardState; onDone:
 
 				<Progress job={job} outcome={outcome} stage={stage} onDismiss={() => setOutcome(null)} />
 
-				<div className="mx-auto min-h-0 w-full max-w-2xl flex-1 overflow-y-auto px-5 pb-8" style={{ overscrollBehavior: "contain" }}>
+				<div
+					className="mx-auto w-full max-w-2xl flex-1 overflow-y-auto px-5"
+					/* Sized to the part of the panel that is on screen, not to the panel
+					   itself. See scrollerMaxHeight: this is what makes the sheet scroll at
+					   the half stage instead of hiding its lower third below the fold. */
+					style={{
+						maxHeight: scrollerMaxHeight(stage),
+						overscrollBehavior: "contain",
+						/* Clears the home indicator on a phone; 0 everywhere else. */
+						paddingBottom: "calc(2rem + env(safe-area-inset-bottom))",
+					}}
+				>
 					<Section title="Charging">
 						<Tile
 							icon={<BoltIcon />}
@@ -518,7 +537,7 @@ function Progress({
 			// it centres on what you can actually see, at either height.
 			style={{
 				touchAction: "none",
-				paddingBottom: stage === "half" ? `${PANEL_VH - HALF_VH}vh` : undefined,
+				maxHeight: visibleHeight(stage),
 			}}
 		>
 			{job && (

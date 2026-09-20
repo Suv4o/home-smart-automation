@@ -3,7 +3,7 @@ import { useLiveState } from "./hooks/useLiveState.ts";
 import { useWakeLock } from "./hooks/useWakeLock.ts";
 import { HouseScene } from "./components/HouseScene.tsx";
 import { ControlSheet } from "./components/controls/ControlSheet.tsx";
-import { HANDLE_PX } from "./components/controls/sheet.ts";
+import { handleTotal } from "./components/controls/sheet.ts";
 import { StatStrip } from "./components/StatStrip.tsx";
 import { StatusBanner, StatusNotices } from "./components/StatusBanner.tsx";
 import { skyPalette } from "./components/scene/palette.ts";
@@ -26,6 +26,10 @@ export default function App() {
 		const root = document.documentElement;
 		root.dataset["phase"] = phase;
 		const p = skyPalette(daylight);
+		// Keep the installed app's own chrome on the same clock as the page. iOS
+		// tints the status-bar area from this, and index.html can only declare one
+		// value - night navy - which is wrong for most of the day.
+		document.querySelector('meta[name="theme-color"]')?.setAttribute("content", p.page);
 		for (const [name, value] of [
 			["page", p.page],
 			["surface", p.surface],
@@ -51,19 +55,49 @@ export default function App() {
 	}
 
 	return (
-		<div className="flex h-full flex-col bg-page">
+		/*
+		 * index.html asks for `viewport-fit=cover` and a translucent status bar, so
+		 * iOS runs the page edge to edge - underneath the clock and signal icons at
+		 * the top, and the home indicator at the bottom. That is the right choice
+		 * for an illustration that should reach the corners, but it means the insets
+		 * are ours to apply. Without these the header collides with the status bar.
+		 *
+		 * Every one of them is 0px on Android, on the kiosk tablet and in a desktop
+		 * browser, so this changes nothing anywhere else. The sheet is `fixed` and
+		 * so is not affected by this padding - it handles its own insets.
+		 */
+		<div
+			className="flex h-full flex-col bg-page"
+			style={{
+				paddingTop: "env(safe-area-inset-top, 0px)",
+				paddingLeft: "env(safe-area-inset-left, 0px)",
+				paddingRight: "env(safe-area-inset-right, 0px)",
+			}}
+		>
 			<StatusBanner state={state} connection={connection} />
-			{/* `relative` so the notices can float over the scene instead of taking
-			    layout space above it - see StatusNotices for why that matters. */}
-			<main className="relative min-h-0 flex-1">
-				<StatusNotices state={state} connection={connection} />
-				<HouseScene state={state} />
-			</main>
-			<StatStrip state={state} />
+			{/*
+			  * Stacked in portrait; side by side on a phone in landscape.
+			  *
+			  * The illustration's frame is 535x580 - taller than it is wide. Stacked
+			  * in landscape it was handed a 612x120 slot, and `meet` scales to the
+			  * limiting dimension, so the house drew at 111x120 with ~500px of empty
+			  * gutter either side. Moving the four figures into a column down the
+			  * right gives the scene a squarer box and roughly 2.7x the size, without
+			  * shrinking a single glyph.
+			  */}
+			<div className="flex min-h-0 flex-1 flex-col landscape-phone:flex-row">
+				{/* `relative` so the notices can float over the scene instead of taking
+				    layout space above it - see StatusNotices for why that matters. */}
+				<main className="relative min-h-0 min-w-0 flex-1">
+					<StatusNotices state={state} connection={connection} />
+					<HouseScene state={state} />
+				</main>
+				<StatStrip state={state} />
+			</div>
 			{/* Reserves the strip of screen the collapsed handle occupies. The sheet
 			    itself is fixed, so opening it slides over the scene instead of
 			    shrinking it. */}
-			<div style={{ height: HANDLE_PX }} aria-hidden />
+			<div style={{ height: handleTotal() }} aria-hidden />
 			<ControlSheet state={state} onDone={() => undefined} />
 		</div>
 	);

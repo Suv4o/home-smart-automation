@@ -43,19 +43,24 @@ export function StatusBanner({ state, connection }: { state: DashboardState; con
 	// has finished. Announcing that is very different from asking for a cable.
 	const full = charging && state.chargeState === "full";
 
+	// `short` is what the phone header shows. These headlines were written for a
+	// tablet read from across the room, where "WAITING FOR THE CAR" fits easily;
+	// at phone width the same string needs about twice the space available and
+	// truncates to "W...". What the short form drops is already behind the ⓘ.
 	const status = blocked
-		? { icon: <AlertIcon />, headline: "PAUSED — GRID TOO BUSY", tone: "text-critical" }
+		? { icon: <AlertIcon />, headline: "PAUSED — GRID TOO BUSY", short: "PAUSED", tone: "text-critical" }
 		: waiting
-			? { icon: <PlugIcon />, headline: "WAITING FOR THE CAR", tone: "text-ink-dim" }
+			? { icon: <PlugIcon />, headline: "WAITING FOR THE CAR", short: "WAITING", tone: "text-ink-dim" }
 			: full
-				? { icon: <BoltIcon size={30} />, headline: "CAR IS FULLY CHARGED", tone: "text-good" }
+				? { icon: <BoltIcon size={30} />, headline: "CAR IS FULLY CHARGED", short: "CAR FULL", tone: "text-good" }
 			: charging
 				? {
 						icon: <BoltIcon size={30} />,
 						headline: state.chargeState === "charging" ? "CHARGING" : "STARTING TO CHARGE",
+						short: state.chargeState === "charging" ? "CHARGING" : "STARTING",
 						tone: "text-good",
 					}
-				: { icon: <BoltOffIcon />, headline: "NOT CHARGING", tone: "text-ink-dim" };
+				: { icon: <BoltOffIcon />, headline: "NOT CHARGING", short: "NOT CHARGING", tone: "text-ink-dim" };
 	const { headline, tone } = status;
 
 	const { limits: l } = state;
@@ -64,14 +69,17 @@ export function StatusBanner({ state, connection }: { state: DashboardState; con
 	const overriddenOn = state.override?.mode === "force_on";
 
 	return (
-		<header className="px-6 pt-5 pb-3">
+		<header className="px-4 pt-3 pb-2 sm:px-6 sm:pt-5 sm:pb-3 landscape-phone:pt-1.5 landscape-phone:pb-1">
 			{/* The tone sits on the row so the icon inherits it through
 			    `currentColor`; the ⓘ overrides it back to muted. */}
-			<div className={`flex items-center gap-3 ${tone}`}>
+			<div className={`flex items-center gap-2 sm:gap-3 ${tone}`}>
 				<span className="shrink-0">{status.icon}</span>
 				{/* Truncates rather than wraps: a second header line would resize the
 				    illustration, which is a bug we have already fixed twice. */}
-				<h1 className="min-w-0 truncate text-4xl font-bold tracking-tight">{headline}</h1>
+				<h1 className="min-w-0 truncate text-xl font-bold tracking-tight sm:text-4xl">
+					<span className="sm:hidden">{status.short}</span>
+					<span className="hidden sm:inline">{headline}</span>
+				</h1>
 				<button
 					type="button"
 					onClick={() => setWhy(true)}
@@ -87,13 +95,13 @@ export function StatusBanner({ state, connection }: { state: DashboardState; con
 					type="button"
 					onClick={() => setSky(true)}
 					aria-label="Sun and weather"
-					className="ml-auto flex shrink-0 items-center gap-3 rounded-2xl px-2 py-1 active:bg-hairline"
+					className="ml-auto flex shrink-0 items-center gap-2 rounded-2xl px-1 py-1 active:bg-hairline sm:gap-3 sm:px-2"
 				>
 					<Clock timezone={state.timezone} />
 					{state.weather && (
-						<span className="flex items-center gap-1.5 text-muted">
+						<span className="flex items-center gap-1 text-muted sm:gap-1.5">
 							<WeatherIcon icon={state.weather.condition.icon} />
-							<span className="text-2xl font-semibold tabular-nums text-ink-dim">
+							<span className="text-base font-semibold tabular-nums text-ink-dim sm:text-2xl">
 								{Math.round(state.weather.temperatureC)}°
 							</span>
 						</span>
@@ -192,26 +200,26 @@ export function StatusNotices({ state, connection }: { state: DashboardState; co
 	if (!override && !offline && !error) return null;
 
 	return (
-		<div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col items-start gap-2 px-6 pt-1">
+		<div className="pointer-events-none absolute inset-x-0 top-0 z-10 flex flex-col items-start gap-1 px-4 pt-1 sm:gap-2 sm:px-6">
 			{override && pendingStart !== null ? (
 				/* Scheduled but not started. Saying "1h left" here would suggest it
 				   is already running and the plug is being held. */
-				<p className="rounded-full bg-surface/95 px-4 py-1 text-lg text-warning">
+				<p className="rounded-full bg-surface/95 px-3 py-0.5 text-sm text-warning sm:px-4 sm:py-1 sm:text-lg">
 					{override.mode === "force_on" ? "charge" : "pause"} scheduled for {clockAt(pendingStart, timezone)} ·{" "}
 					{until(pendingStart)}
 				</p>
 			) : override ? (
-				<p className="rounded-full bg-surface/95 px-4 py-1 text-lg text-warning">
+				<p className="rounded-full bg-surface/95 px-3 py-0.5 text-sm text-warning sm:px-4 sm:py-1 sm:text-lg">
 					manual override · {countdown(override.until)}
 					{override.releaseWhenDone && " · or until the car is full"}
 				</p>
 			) : null}
 			{offline && (
-				<p className="rounded-full bg-surface/95 px-4 py-1 text-lg text-serious">
+				<p className="rounded-full bg-surface/95 px-3 py-0.5 text-sm text-serious sm:px-4 sm:py-1 sm:text-lg">
 					{connection === "offline" ? "reconnecting to the daemon…" : "connecting…"}
 				</p>
 			)}
-			{error && <p className="rounded-full bg-surface/95 px-4 py-1 text-base text-serious">{error}</p>}
+			{error && <p className="rounded-full bg-surface/95 px-3 py-0.5 text-xs text-serious sm:px-4 sm:py-1 sm:text-base">{error}</p>}
 		</div>
 	);
 }
