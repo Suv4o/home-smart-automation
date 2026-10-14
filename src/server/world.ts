@@ -10,6 +10,7 @@ import {
 	sampleFactor,
 	saveCalibration,
 } from "../providers/solar-calibration.ts";
+import { carRetryDelayMs, retryLabel } from "../engine/car-retry.ts";
 import { estimatePv, fetchWeather, type WeatherReading } from "../providers/weather.ts";
 import { MELBOURNE_TZ } from "../time.ts";
 import { isActive, loadOverride } from "../engine/override.ts";
@@ -54,6 +55,10 @@ export class World {
 	#wasCharging = false;
 	/** One BLE read at a time; they are slow and the display polls far faster. */
 	#carReadInFlight = false;
+	/** Consecutive failed Bluetooth reads; resets on the first success. */
+	#carReadFailures = 0;
+	/** Earliest time a retry is allowed, while #carReadFailures is above zero. */
+	#carRetryAfter = 0;
 
 	readonly #provider: SolarProvider;
 	readonly #charger: ChargerController;
@@ -368,6 +373,9 @@ export class World {
 	 */
 	async #refreshCarWhileCharging(charge: ChargeState, cachedAt: number | null): Promise<void> {
 		if (this.#carReadInFlight) return;
+		// Backing off after a failure is what stops the retry loop from being the
+		// thing that keeps the car unreachable - see carRetryDelayMs.
+		if (this.#carReadFailures > 0 && Date.now() < this.#carRetryAfter) return;
 
 		const charging = charge === "charging";
 		const justStarted = charging && !this.#wasCharging;
@@ -383,13 +391,28 @@ export class World {
 		try {
 			const reading = await this.#car.refresh();
 			if (reading) {
+				this.#carReadFailures = 0;
+				this.#carRetryAfter = 0;
+				this.#clearError("car");
 				logger.info(
 					{ soc: reading.soc, trigger: justStopped ? "draw stopped" : justStarted ? "charge started" : "due" },
 					"car battery read",
 				);
 				await this.publish(); // show the new figure without waiting for the next poll
+			} else {
+				// `refresh` reports a failed read by returning null rather than
+				// throwing, so the catch below never saw one. That is why 139
+				// consecutive failures left `errors` empty and the dashboard simply
+				// showed a percentage that had quietly stopped moving.
+				this.#carReadFailures += 1;
+				const wait = carRetryDelayMs(this.#carReadFailures);
+				this.#carRetryAfter = Date.now() + wait;
+				this.#noteError("car", `couldn't reach the car over Bluetooth — trying again in ${retryLabel(wait)}`);
+				await this.publish(); // say so on the screen rather than freezing silently
 			}
 		} catch (err) {
+			this.#carReadFailures += 1;
+			this.#carRetryAfter = Date.now() + carRetryDelayMs(this.#carReadFailures);
 			this.#noteError("car", err);
 		} finally {
 			this.#carReadInFlight = false;
