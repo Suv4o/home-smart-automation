@@ -113,6 +113,7 @@ fine too — tmux keeps running and `tmux attach` picks it up.
 | Learned PV calibration | `~/.config/home-automation/solar-calibration.json` |
 | Tesla private key | `~/.tesla/private.pem` (mode 600 — this is a car key) |
 | `tesla-control` source | `~/vehicle-command` |
+| Wi-Fi watchdog | `/usr/local/sbin/wifi-watchdog`, from `deploy/wifi-watchdog.*` |
 
 Everything in the bottom half of that table is outside the repo and **not in
 git**. It does not come back from a `git clone`; it has to be copied by hand.
@@ -129,6 +130,44 @@ npm test
 ```
 
 ## Things that have actually gone wrong
+
+### The server drops off the network but thinks it is fine
+
+On 2026-10-25 the server was unreachable for three hours - no SSH, no
+dashboard, no ping - while the machine itself ran normally throughout and
+never rebooted. The USB Wi-Fi adapter (`rtw88_8821cu`) had stopped
+*transmitting* but stayed associated and kept *receiving*, so nothing on the
+machine noticed: the kernel, wpa_supplicant and systemd-networkd all logged
+nothing for the whole outage. There was no disconnect for them to react to.
+
+The tell, if it happens again: from another machine the server answers ARP
+(`arp -n 192.168.1.23` shows its MAC) but not ping. A frozen or powered-off
+machine answers neither. Unplugging and re-plugging the adapter fixes it
+instantly.
+
+`deploy/wifi-watchdog.sh` now does that automatically. Once a minute it pings
+the router, and after three consecutive failures it resets the adapter's USB
+device - the software equivalent of a re-plug. It also re-asserts power save
+off on every run, because a re-plugged or reset adapter comes back with the
+driver's default (on), which quietly undoes the boot-time setting.
+
+```sh
+journalctl -u wifi-watchdog          # anything it has had to do
+systemctl list-timers wifi-watchdog  # when it last ran / runs next
+```
+
+It pings the router rather than the internet on purpose: an ISP outage is not
+the adapter's fault, and resetting it would only add a gap.
+
+Installing it, or reinstalling after changing it:
+
+```sh
+cd ~/home-smart-automation
+sudo install -m 755 deploy/wifi-watchdog.sh /usr/local/sbin/wifi-watchdog
+sudo install -m 644 deploy/wifi-watchdog.service deploy/wifi-watchdog.timer /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now wifi-watchdog.timer
+```
 
 ### `node: command not found`, but only sometimes
 

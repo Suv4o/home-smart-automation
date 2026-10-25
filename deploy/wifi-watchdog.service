@@ -1,0 +1,8 @@
+# Resets the USB Wi-Fi adapter when the link has silently died.
+# See deploy/wifi-watchdog.sh for why, and docs/running-on-the-server.md.
+[Unit]
+Description=Reset the USB Wi-Fi adapter if the link has silently died
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/wifi-watchdog
